@@ -1,0 +1,26 @@
+{
+  "name": "poe2-endgame-companion",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Path of Exile 2 character analysis and endgame companion. Merges POE2-MCP-V2 and Poe2-endgame.",
+  "license": "MIT",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "npm run build --workspace @poe2/core && npm run build --workspace @poe2/web",
+    "test": "npm run test --workspace @poe2/core",
+    "//typecheck": "The core must be BUILT first: apps/web resolves @poe2/core to its dist/, so typechecking the web app before that exists fails with 40 cascading errors.",
+    "typecheck": "npm run build --workspace @poe2/core && npm run typecheck --workspaces --if-present",
+    "lint": "npm run lint --workspaces --if-present",
+    "dev": "npm run dev --workspace @poe2/web"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.3",
+    "vitest": "^3.0.5"
+  }
+}

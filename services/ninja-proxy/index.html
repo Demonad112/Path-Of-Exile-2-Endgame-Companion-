@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>PoE2 Companion — poe.ninja proxy</title>
+    <style>
+      body {
+        font-family: system-ui, sans-serif;
+        background: #060608;
+        color: #cbd5e1;
+        max-width: 40rem;
+        margin: 4rem auto;
+        padding: 0 1.5rem;
+        line-height: 1.6;
+      }
+      code {
+        background: rgba(255, 255, 255, 0.08);
+        padding: 0.1rem 0.35rem;
+        border-radius: 0.25rem;
+      }
+      a {
+        color: #e3b341;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>poe.ninja proxy</h1>
+    <p>
+      Server-side proxy for the
+      <a href="https://demonad112.github.io/Poe2-endgame/">PoE2 Endgame Companion</a>'s
+      character-import feature. It exists only because poe.ninja's public
+      character API can't be called directly from a browser (CORS + an SSE
+      first hop). Everything it returns is public data already visible on a
+      character's poe.ninja profile.
+    </p>
+    <p>
+      Endpoint:
+      <code>/api/character?account=&lt;acct&gt;&amp;league=&lt;slug&gt;&amp;character=&lt;name&gt;</code>
+    </p>
+  </body>
+</html>

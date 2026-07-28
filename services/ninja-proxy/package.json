@@ -1,0 +1,10 @@
+{
+  "name": "poe2-ninja-proxy",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Server-side poe.ninja character fetch with CORS headers. Deployed separately from the monorepo workspaces.",
+  "engines": {
+    "node": ">=20"
+  }
+}
