@@ -1,0 +1,13 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "dist",
+    "rootDir": "src",
+    // The core runs in BOTH Node (MCP server) and the browser (web app), so it
+    // must typecheck against both. Runtime-specific APIs are feature-detected,
+    // never assumed — see pob/export.ts.
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "types": ["node"]
+  },
+  "include": ["src/**/*"]
+}

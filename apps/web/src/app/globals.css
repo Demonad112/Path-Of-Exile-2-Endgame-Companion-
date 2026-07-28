@@ -1,0 +1,205 @@
+@import 'tailwindcss';
+
+/*
+ * Dark-first. The viewer's theme toggle stamps data-theme on the root and must
+ * win over the OS preference in both directions.
+ *
+ * Damage-type colours are NOT decorative — they were validated with the dataviz
+ * palette validator against both surfaces (all six checks pass; see
+ * DESIGN.md). Do not hand-tweak them without re-running the validator.
+ */
+
+@theme inline {
+  --color-surface: var(--surface);
+  --color-surface-raised: var(--surface-raised);
+  --color-surface-sunken: var(--surface-sunken);
+  --color-line: var(--line);
+  --color-ink: var(--ink);
+  --color-ink-dim: var(--ink-dim);
+  --color-ink-mute: var(--ink-mute);
+  --color-accent: var(--accent);
+  --color-accent-dim: var(--accent-dim);
+
+  --color-danger: var(--danger);
+  --color-warn: var(--warn);
+  --color-good: var(--good);
+
+  --color-physical: var(--dmg-physical);
+  --color-fire: var(--dmg-fire);
+  --color-cold: var(--dmg-cold);
+  --color-lightning: var(--dmg-lightning);
+  --color-chaos: var(--dmg-chaos);
+
+  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, monospace;
+}
+
+:root {
+  color-scheme: dark;
+
+  --surface: #0b0b0d;
+  --surface-raised: #141417;
+  --surface-sunken: #08080a;
+  --line: #26262c;
+  --ink: #f2ede4;
+  --ink-dim: #a8a49c;
+  --ink-mute: #6f6c66;
+  --accent: #e3b341;
+  --accent-dim: #8a6d22;
+
+  --danger: #e66767;
+  --warn: #c98500;
+  --good: #199e70;
+
+  /* Validated dark steps — dataviz validator, surface #1a1a19, ALL CHECKS PASS */
+  --dmg-physical: #199e70;
+  --dmg-fire: #d95926;
+  --dmg-cold: #3987e5;
+  --dmg-lightning: #c98500;
+  --dmg-chaos: #9085e9;
+}
+
+@media (prefers-color-scheme: light) {
+  :root:where(:not([data-theme='dark'])) {
+    color-scheme: light;
+
+    --surface: #fcfcfb;
+    --surface-raised: #ffffff;
+    --surface-sunken: #f2f1ee;
+    --line: #dedcd6;
+    --ink: #16161a;
+    --ink-dim: #52514e;
+    --ink-mute: #85837d;
+    --accent: #9a7412;
+    --accent-dim: #d8c48a;
+
+    --danger: #c4302f;
+    --warn: #8a5c00;
+    --good: #10704e;
+
+    /* Validated light steps — surface #fcfcfb. Contrast WARN on aqua/yellow is
+       relieved by the direct labels shipped on every damage-split bar. */
+    --dmg-physical: #1baf7a;
+    --dmg-fire: #eb6834;
+    --dmg-cold: #2a78d6;
+    --dmg-lightning: #eda100;
+    --dmg-chaos: #4a3aa7;
+  }
+}
+
+:root[data-theme='light'] {
+  color-scheme: light;
+
+  --surface: #fcfcfb;
+  --surface-raised: #ffffff;
+  --surface-sunken: #f2f1ee;
+  --line: #dedcd6;
+  --ink: #16161a;
+  --ink-dim: #52514e;
+  --ink-mute: #85837d;
+  --accent: #9a7412;
+  --accent-dim: #d8c48a;
+
+  --danger: #c4302f;
+  --warn: #8a5c00;
+  --good: #10704e;
+
+  --dmg-physical: #1baf7a;
+  --dmg-fire: #eb6834;
+  --dmg-cold: #2a78d6;
+  --dmg-lightning: #eda100;
+  --dmg-chaos: #4a3aa7;
+}
+
+/*
+ * Elevation shadows.
+ *
+ * Defined once here rather than inline because they must differ per surface: a
+ * black-alpha shadow that reads as depth on the dark surface is invisible on
+ * the light one, and a shadow strong enough for light looks like a smear on
+ * dark. Consumers reference --lift / --lift-raised and get the right one.
+ */
+:root {
+  --lift: 0 1px 2px rgb(0 0 0 / 0.4);
+  --lift-raised: 0 6px 20px -6px rgb(0 0 0 / 0.55);
+}
+
+@media (prefers-color-scheme: light) {
+  :root:where(:not([data-theme='dark'])) {
+    --lift: 0 1px 2px rgb(0 0 0 / 0.06);
+    --lift-raised: 0 6px 20px -6px rgb(0 0 0 / 0.14);
+  }
+}
+
+:root[data-theme='light'] {
+  --lift: 0 1px 2px rgb(0 0 0 / 0.06);
+  --lift-raised: 0 6px 20px -6px rgb(0 0 0 / 0.14);
+}
+
+html {
+  background: var(--surface);
+}
+
+body {
+  background: var(--surface);
+  color: var(--ink);
+  -webkit-font-smoothing: antialiased;
+  /* Wide content scrolls inside its own container; the page never does. */
+  overflow-x: hidden;
+}
+
+::selection {
+  background: color-mix(in oklab, var(--accent) 32%, transparent);
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 3px;
+}
+
+/* Recessive scrollbars so data, not chrome, carries the weight. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--line) transparent;
+}
+
+@keyframes shimmer {
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+/* Skeletons: analysis takes seconds and must never feel frozen. */
+.skeleton {
+  position: relative;
+  overflow: hidden;
+  background: var(--surface-raised);
+}
+.skeleton::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(
+    90deg,
+    transparent,
+    color-mix(in oklab, var(--ink) 6%, transparent),
+    transparent
+  );
+  animation: shimmer 1.6s infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skeleton::after {
+    animation: none;
+  }
+  * {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+  }
+}
+
+.tabular {
+  font-variant-numeric: tabular-nums;
+}

@@ -1,0 +1,34 @@
+name: CI
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Test core
+        run: npm test
+      - name: Build web
+        run: npm run build --workspace @poe2/web
+      - name: Build MCP server
+        run: npm run build --workspace @poe2/mcp
+      - name: Verify MCP server over stdio
+        # Spawns the real binary and drives it with actual protocol messages,
+        # asserting the values returned are the real character's.
+        run: node scripts/verify-mcp.mjs
+      - name: Check the generated tool table is up to date
+        run: |
+          npm run tools --workspace @poe2/mcp
+          git diff --exit-code apps/mcp/TOOLS.md \
+            || (echo "TOOLS.md is stale — run 'npm run tools -w @poe2/mcp' and commit the result." && exit 1)

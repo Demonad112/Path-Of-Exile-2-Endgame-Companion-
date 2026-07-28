@@ -1,0 +1,28 @@
+{
+  "name": "@poe2/mcp",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "MCP server exposing the PoE2 build analyser. Thin adapters over @poe2/core — no analysis logic of its own.",
+  "bin": {
+    "poe2-mcp-server": "./dist/index.js"
+  },
+  "scripts": {
+    "prebuild": "npm run build -w @poe2/core",
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "start": "node dist/index.js",
+    "//tools": "The generator reads the BUILT registry, so dist must be current. Regenerating from a stale dist writes stale docs that pass locally and fail CI's drift check — which is exactly what happened once.",
+    "pretools": "npm run build",
+    "tools": "node dist/tool-table.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.12.0",
+    "@poe2/core": "*",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.1",
+    "typescript": "^5.7.3"
+  }
+}
