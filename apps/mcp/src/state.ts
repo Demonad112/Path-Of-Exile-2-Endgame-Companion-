@@ -12,6 +12,7 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
   analyzeCharacter,
+  fetchLadder,
   NinjaClient,
   ModDatabase,
   PassiveTree,
@@ -21,6 +22,7 @@ import {
   parseAllSetups,
   type Analysis,
   type CharModel,
+  type LadderSummary,
   type ModBaseData,
   type ModData,
   type ModTierData,
@@ -100,6 +102,28 @@ export const client = new NinjaClient({
   fetch: (input, init) => fetch(input, init as RequestInit),
 })
 
+/**
+ * Top-of-ladder figures for the character's league and ascendancy.
+ *
+ * Opt-in, because it is an outbound call this server does not otherwise make:
+ * set POE2_NINJA_PROXY_BASE to enable it. The hop cannot go direct — poe.ninja's
+ * builds endpoints are protobuf with no published schema, and the proxy is what
+ * decodes them (see services/ninja-proxy/api/ladder.js).
+ *
+ * Without it the build assessment leaves damage unscored and says why, which is
+ * the correct outcome: there is no defensible threshold to grade against.
+ */
+async function ladderFor(model: CharModel): Promise<LadderSummary | null> {
+  const base = process.env.POE2_NINJA_PROXY_BASE
+  if (!base || !model.league) return null
+  return fetchLadder({
+    fetch: (input, init) => fetch(input, init as RequestInit),
+    proxyBaseUrl: base,
+    league: model.league,
+    ...(model.class ? { ascendancy: model.class } : {}),
+  })
+}
+
 export async function loadCharacter(raw: unknown, source: string): Promise<LoadedCharacter> {
   // Pass the affix ladders in so recommendations name the actual item and affix
   // rather than saying "source resistance from gear". The artifact is local, so
@@ -111,8 +135,20 @@ export async function loadCharacter(raw: unknown, source: string): Promise<Loade
   } catch {
     tiers = undefined
   }
-  const analysis = await analyzeCharacter(raw, { tiers })
+
+  // The tree resolves allocated node ids to keystone NAMES. Without it no
+  // keystone correction can be applied and a Chaos Inoculation build reads as
+  // an ordinary one — thin on life, short on chaos resistance, neither true.
+  // The artifact is local, so the only reason to be without it is a read error.
+  let tree: PassiveTree | undefined
+  try {
+    tree = passiveTree()
+  } catch {
+    tree = undefined
+  }
+
   const model = (raw as { charModel?: CharModel }).charModel ?? (raw as CharModel)
+  const analysis = await analyzeCharacter(raw, { tiers, tree, ladder: await ladderFor(model) })
   const setups = parseAllSetups(model.skills)
   current = { model, analysis, setups, supports: indexSupports(setups), source }
   return current

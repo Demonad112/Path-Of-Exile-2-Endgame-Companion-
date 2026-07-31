@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { analyzeCharacter, analyzeFromPob, type Analysis, type PobAnalysis } from '@poe2/core'
+import { Attribution } from '@/components/Attribution'
+import { BuildScore } from '@/components/BuildScore'
 import { DefensePanel } from '@/components/DefensePanel'
 import { DpsMatrix } from '@/components/DpsMatrix'
 import { GearDetail } from '@/components/GearDetail'
@@ -11,12 +13,16 @@ import { AuditPanel } from '@/components/AuditPanel'
 import { Chat } from '@/components/Chat'
 import { PobAnalysisView } from '@/components/PobAnalysisView'
 import { ImportBar, type ImportResult } from '@/components/ImportBar'
+import { Progress } from '@/components/Progress'
 import { Reconciliation } from '@/components/Reconciliation'
 import { Recommendations } from '@/components/Recommendations'
 import { Skeleton } from '@/components/Skeleton'
 import { TreePanel } from '@/components/tree/TreePanel'
 import { Tag } from '@/components/ui'
+import { useCharacterHistory } from '@/lib/useCharacterHistory'
+import { useLadder } from '@/lib/useLadder'
 import { useModTiers } from '@/lib/useModTiers'
+import { usePassiveTree } from '@/lib/usePassiveTree'
 
 /**
  * Stats the analysis found the build short on, worst first.
@@ -52,27 +58,53 @@ export default function Home() {
   // them estimated — so it is kept as its own shape rather than pretending to
   // be a full poe.ninja analysis with holes in it.
   const [pobAnalysis, setPobAnalysis] = useState<PobAnalysis | null>(null)
-  // One fetch for the whole page. The gear panel and the findings list must
-  // agree about what is wasted and what would fix it, and two fetches of the
-  // same artifact into two components is how that drifts.
-  const tiersState = useModTiers(analysis !== null)
-  // Kept so the analysis can be re-derived once the affix data lands: "source
-  // resistance from gear" becomes "recraft this suffix on that item into this
-  // affix". Re-running is cheap — it is pure computation over parsed data.
+  // Kept so the analysis can be re-derived as each optional input lands. Every
+  // one only makes the result MORE specific, and re-running is cheap — it is
+  // pure computation over already-parsed data.
   const [raw, setRaw] = useState<unknown>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
+  // One fetch each, for the whole page. The gear panel and the findings list
+  // must agree about what is wasted and what would fix it; the tree drawing and
+  // the keystone corrections must agree about what is allocated. Two fetches of
+  // the same artifact into two components is how both of those drift.
+  const tiersState = useModTiers(raw !== null)
+  const treeState = usePassiveTree(raw !== null)
+  // Needs the character's league and ascendancy, so it can only start once
+  // there is a first analysis. Failure is silent: the assessment already knows
+  // how to leave damage unscored and say why.
+  const ladder = useLadder(analysis?.identity.league ?? null, analysis?.identity.className ?? null)
+
   useEffect(() => {
-    if (tiersState.status !== 'ready' || !raw) return
+    if (!raw) return
     let cancelled = false
-    void analyzeCharacter(raw, { tiers: tiersState.tiers }).then((next) => {
-      if (!cancelled) setAnalysis(next)
+    void analyzeCharacter(raw, {
+      ...(tiersState.status === 'ready' ? { tiers: tiersState.tiers } : {}),
+      ...(treeState.status === 'ready' ? { tree: treeState.tree } : {}),
+      ladder,
     })
+      .then((next) => {
+        if (!cancelled) setAnalysis(next)
+      })
+      .catch((err: Error) => {
+        if (cancelled) return
+        setError(`Could not analyse that data: ${err.message}`)
+        setAnalysis(null)
+      })
+      .finally(() => {
+        if (!cancelled) setBusy(false)
+      })
     return () => {
       cancelled = true
     }
-  }, [tiersState, raw])
+  }, [raw, tiersState, treeState, ladder])
+
+  // Only recorded once the tree has settled, either way. A snapshot taken
+  // before then carries an uncorrected pool, and would be followed by a
+  // corrected one — two rows for one import, showing a change nobody made.
+  const treeSettled = treeState.status === 'ready' || treeState.status === 'error'
+  const history = useCharacterHistory(treeSettled ? analysis : null)
 
   const handleResult = useCallback(async (r: ImportResult) => {
     if (!r.ok) {
@@ -86,15 +118,17 @@ export default function Home() {
         setAnalysis(null)
         setRaw(null)
         setPobAnalysis(await analyzeFromPob(r.code))
+        setBusy(false)
       } else {
         setPobAnalysis(null)
+        setAnalysis(null)
+        // The effect above owns analysis from here — it re-runs as the tree,
+        // affix data and ladder sample land, and clears `busy` when done.
         setRaw(r.data)
-        setAnalysis(await analyzeCharacter(r.data))
       }
     } catch (err) {
       setError(`Could not analyse that data: ${(err as Error).message}`)
       setAnalysis(null)
-    } finally {
       setBusy(false)
     }
   }, [])
@@ -155,6 +189,8 @@ export default function Home() {
               </p>
             ))}
 
+            <BuildScore assessment={analysis.assessment} keystones={analysis.keystones} />
+
             <Recommendations report={analysis.recommendations} />
 
             <div className="grid gap-4 lg:grid-cols-2">
@@ -163,11 +199,21 @@ export default function Home() {
               <Headroom defense={analysis.defense} />
             </div>
 
-            <DpsMatrix dps={analysis.dps} />
+            <DpsMatrix
+              dps={analysis.dps}
+              pobConfig={analysis.pobConfig}
+              configApplies={
+                analysis.reconciliation?.checks.find((c) => c.stat.startsWith('dps:'))?.severity === 'match'
+              }
+            />
+
+            <Progress history={history} />
+
+            <Attribution report={analysis.attribution} />
 
             <GearDetail items={analysis.items} defense={analysis.defense} state={tiersState} />
 
-            <TreePanel allocation={analysis.passives} weakStats={weakStatsFrom(analysis)} />
+            <TreePanel allocation={analysis.passives} state={treeState} weakStats={weakStatsFrom(analysis)} />
 
             <AuditPanel model={analysis.model} pobStats={analysis.pobStats} state={tiersState} />
 

@@ -13,10 +13,19 @@
 import type { CharModel } from '../model/types.js'
 import { analyzeDefense, type DefenseSummary } from '../defense/index.js'
 import { analyzeDps, type DpsSummary } from '../dps/index.js'
+import { NO_KEYSTONE_EFFECTS, type KeystoneEffects } from '../keystones/index.js'
 import { indexBreakdowns, projectStat, statSources, type BreakdownIndex } from '../model/breakdowns.js'
 import { normalizePassives, inactiveSetNodes, type PassiveAllocation } from '../model/passives.js'
 import { normalizeItems, type EquippedItem } from '../model/slots.js'
-import type { Cost, Evidence, Impact, Recommendation, RecommendationReport, Unresolved } from './types.js'
+import type {
+  Cost,
+  Evidence,
+  Impact,
+  Recommendation,
+  RecommendationReport,
+  Suppressed,
+  Unresolved,
+} from './types.js'
 
 export * from './types.js'
 export * from './gear.js'
@@ -51,6 +60,20 @@ interface Context {
   breakdowns: BreakdownIndex
   passives: PassiveAllocation
   items: EquippedItem[]
+  /**
+   * Corrections from allocated keystones. A keystone can make a finding not
+   * merely harsh but WRONG — "raise chaos resistance" on a Chaos Inoculation
+   * build is advice to fix something that cannot be broken.
+   */
+  keystones: KeystoneEffects
+  /**
+   * Findings a keystone ruled out, collected as the rules run.
+   *
+   * Suppression is never silent. A finding that vanishes without explanation is
+   * indistinguishable from one the engine failed to spot, and the difference
+   * matters to anyone deciding whether to trust the list.
+   */
+  suppressed: Suppressed[]
 }
 
 // ---------------------------------------------------------------------------
@@ -62,6 +85,19 @@ function resistanceRules(ctx: Context): Recommendation[] {
   const over = ctx.defense.resistances.filter((r) => r.overCap > 0)
 
   for (const res of under) {
+    // Chaos Inoculation grants outright immunity to chaos damage. A chaos
+    // resistance figure on such a build is not low, it is meaningless.
+    if (res.type === 'chaos' && ctx.keystones.chaosImmune) {
+      ctx.suppressed.push({
+        id: 'res-chaos-under-cap',
+        finding: `Chaos resistance is ${res.value}% against a cap of ${res.max}%.`,
+        reason:
+          'Chaos Inoculation is allocated and corroborated by this character’s own stats, granting immunity to chaos damage. Raising chaos resistance would change nothing.',
+        keystone: 'Chaos Inoculation',
+      })
+      continue
+    }
+
     const capitalised = res.type[0]!.toUpperCase() + res.type.slice(1)
     const evidence: Evidence[] = [
       {
@@ -163,17 +199,37 @@ function oneShotRule(ctx: Context): Recommendation[] {
   const d = ctx.defense
   if (d.lowestMaximumHit === null || d.maxHits.length < 2) return []
 
-  const lowest = d.maxHits[0]!
-  const highest = d.maxHits[d.maxHits.length - 1]!
+  // Chaos cannot kill a Chaos Inoculation character, so it cannot be the
+  // one-shot vector — and on such a build it is routinely the smallest figure
+  // poe.ninja reports, which would otherwise make it the headline finding every
+  // single time.
+  const hits = ctx.keystones.chaosImmune ? d.maxHits.filter((h) => h.type !== 'chaos') : d.maxHits
+  const excludedChaos = hits.length < d.maxHits.length ? d.maxHits.find((h) => h.type === 'chaos') : undefined
+  if (excludedChaos) {
+    ctx.suppressed.push({
+      id: 'one-shot-chaos',
+      finding: `Chaos has the lowest maximum survivable hit at ${excludedChaos.value.toLocaleString()}.`,
+      reason:
+        'Chaos Inoculation is allocated and corroborated by this character’s own stats, so chaos damage cannot kill it.',
+      keystone: 'Chaos Inoculation',
+    })
+  }
+  if (hits.length < 2) return []
+
+  const lowest = hits[0]!
+  const highest = hits[hits.length - 1]!
+  // Recomputed rather than read off `lowest.ratioToHighest`: that figure was
+  // measured against every damage type, including any this rule just excluded.
+  const ratio = lowest.value > 0 ? highest.value / lowest.value : 1
   // Only worth flagging when one vector is meaningfully thinner than the rest.
-  if (lowest.ratioToHighest < 1.5) return []
+  if (ratio < 1.5) return []
 
   const evidence: Evidence[] = [
     {
       kind: 'stat',
       stat: 'lowestMaximumHitTaken',
-      value: d.lowestMaximumHit,
-      note: `A single ${lowest.type} hit of ${d.lowestMaximumHit.toLocaleString()} kills. The safest vector (${highest.type}) survives ${highest.value.toLocaleString()} — ${lowest.ratioToHighest.toFixed(1)}x more.`,
+      value: lowest.value,
+      note: `A single ${lowest.type} hit of ${lowest.value.toLocaleString()} kills. The safest vector (${highest.type}) survives ${highest.value.toLocaleString()} — ${ratio.toFixed(1)}x more.`,
     },
   ]
 
@@ -190,7 +246,16 @@ function oneShotRule(ctx: Context): Recommendation[] {
   const cost: Cost =
     res && res.underCap > 0
       ? { kind: 'gear', amount: 1, currencyTier: 'low', detail: `Close the ${res.underCap}% ${lowest.type} resistance gap first — it is the cheapest lever on this vector.` }
-      : { kind: 'gear', amount: 1, currencyTier: 'moderate', detail: `Add maximum life, energy shield, or ${lowest.type}-specific mitigation.` }
+      : {
+          kind: 'gear',
+          amount: 1,
+          currencyTier: 'moderate',
+          // Maximum life is fixed at 1 under Chaos Inoculation, so recommending
+          // more of it would be advice that cannot be taken.
+          detail: ctx.keystones.lifeIsNegligible
+            ? `Add maximum energy shield or ${lowest.type}-specific mitigation. Maximum life is fixed at 1 by Chaos Inoculation and cannot be raised.`
+            : `Add maximum life, energy shield, or ${lowest.type}-specific mitigation.`,
+        }
 
   if (res) {
     evidence.push({
@@ -205,10 +270,10 @@ function oneShotRule(ctx: Context): Recommendation[] {
     make({
       id: `one-shot-${lowest.type}`,
       category: 'survivability',
-      action: `Shore up ${lowest.type} mitigation — it is this build's one-shot vector at ${d.lowestMaximumHit.toLocaleString()} damage.`,
+      action: `Shore up ${lowest.type} mitigation — it is this build's one-shot vector at ${lowest.value.toLocaleString()} damage.`,
       rationale:
-        `${lowest.type[0]!.toUpperCase()}${lowest.type.slice(1)} has the lowest maximum survivable hit of any damage type, ` +
-        `${lowest.ratioToHighest.toFixed(1)}x below the strongest. The figure opposite is the CEILING — what this vector ` +
+        `${lowest.type[0]!.toUpperCase()}${lowest.type.slice(1)} has the lowest maximum survivable hit of any damage type ` +
+        `that can kill this character, ${ratio.toFixed(1)}x below the strongest. The figure opposite is the CEILING — what this vector ` +
         `would reach if it matched the safest one` +
         (lowest.type === 'chaos'
           ? ', which chaos cannot fully do here: it drains energy shield at twice the rate, so a capped resistance still leaves it the thinnest vector.'
@@ -221,11 +286,11 @@ function oneShotRule(ctx: Context): Recommendation[] {
         // chaos drains energy shield at 2x. Presenting a bound as a result is
         // the same failure as inventing a number.
         label: 'Lowest maximum hit taken — ceiling if fully closed',
-        from: d.lowestMaximumHit,
+        from: lowest.value,
         to: highest.value,
-        delta: highest.value - d.lowestMaximumHit,
+        delta: highest.value - lowest.value,
         unit: 'flat',
-        significance: Math.min(1, (lowest.ratioToHighest - 1) / 3),
+        significance: Math.min(1, (ratio - 1) / 3),
       },
       cost,
       tradeoff: null,
@@ -276,11 +341,21 @@ function armourRule(ctx: Context): Recommendation[] {
     })
   }
 
+  // What is left to lean on depends on what the keystones have converted away.
+  // Under Iron Reflexes there is no evasion to rely on, and under Eldritch
+  // Battery no energy shield — naming either would be advice to use a layer
+  // this build does not have.
+  const fallbacks = [
+    ctx.keystones.evasionIsArmour ? null : 'evasion',
+    ctx.keystones.esNotDefensive ? null : 'energy shield',
+    'resistances',
+  ].filter((s): s is string => s !== null)
+
   return [
     make({
       id: 'armour-negligible',
       category: 'survivability',
-      action: `Treat armour as a non-defence at ${d.armour.toLocaleString()} — rely on evasion, energy shield and resistances, or commit to armour properly.`,
+      action: `Treat armour as a non-defence at ${d.armour.toLocaleString()} — rely on ${fallbacks.join(', ')}, or commit to armour properly.`,
       rationale: `${d.armour.toLocaleString()} armour reduces physical damage by only ${dr}%. Partial investment in armour is the worst of both worlds; the stat scales badly until it is large.`,
       // No impact figure: the honest target armour value cannot be derived from
       // this payload, and rendering the current 2% as a "gain" would read as
@@ -510,7 +585,13 @@ function collectUnresolved(ctx: Context): Unresolved[] {
 
 const RULES = [resistanceRules, oneShotRule, armourRule, anointRule, weaponTierRule, idleWeaponSetRule] as const
 
-export function recommend(model: CharModel): RecommendationReport {
+/**
+ * `keystones` corrects findings an allocated keystone invalidates. Omitted, the
+ * engine behaves exactly as it did before keystones were modelled: every rule
+ * fires, and nothing is suppressed. That is the right default — a correction
+ * that cannot be corroborated must not be applied.
+ */
+export function recommend(model: CharModel, keystones: KeystoneEffects = NO_KEYSTONE_EFFECTS): RecommendationReport {
   const ctx: Context = {
     model,
     defense: analyzeDefense(model),
@@ -518,6 +599,8 @@ export function recommend(model: CharModel): RecommendationReport {
     breakdowns: indexBreakdowns(model),
     passives: normalizePassives(model),
     items: normalizeItems(model),
+    keystones,
+    suppressed: [],
   }
 
   const recommendations = RULES.flatMap((rule) => rule(ctx)).sort((a, b) => b.score - a.score)
@@ -530,6 +613,7 @@ export function recommend(model: CharModel): RecommendationReport {
   return {
     recommendations,
     unresolved,
+    suppressed: ctx.suppressed,
     buildIsSound,
     summary: buildIsSound
       ? 'No actionable weaknesses found. Resistances are capped, no damage type stands out as a one-shot vector, and gear is consistent. This build is in good shape.'

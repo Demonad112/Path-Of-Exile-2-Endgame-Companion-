@@ -158,6 +158,29 @@ export function Recommendations({ report }: { report: RecommendationReport }) {
         </div>
       ) : null}
 
+      {report.suppressed.length ? (
+        <div className="mt-5 rounded-lg border border-line bg-surface-sunken p-4">
+          <h3 className="text-xs font-medium tracking-wide text-ink-dim uppercase">Ruled out by a keystone</h3>
+          <p className="mt-1 text-[11px] text-ink-mute">
+            Findings the engine did spot and then withdrew. Shown rather than dropped — a finding that vanishes
+            silently is indistinguishable from one that was never noticed.
+          </p>
+          <ul className="mt-3 space-y-3">
+            {report.suppressed.map((s) => (
+              <li key={s.id}>
+                <div className="flex flex-wrap items-baseline gap-x-2">
+                  <span className="text-xs font-medium text-ink-dim line-through decoration-ink-mute/50">
+                    {s.finding}
+                  </span>
+                  <Tag tone="accent">{s.keystone}</Tag>
+                </div>
+                <div className="mt-0.5 text-[11px] leading-relaxed text-ink-mute">{s.reason}</div>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+
       {report.unresolved.length ? (
         <div className="mt-5 rounded-lg border border-line bg-surface-sunken p-4">
           <h3 className="text-xs font-medium tracking-wide text-ink-dim uppercase">Could not be determined</h3>

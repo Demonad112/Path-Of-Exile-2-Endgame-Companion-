@@ -13,9 +13,10 @@ import { readFileSync, mkdirSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { chromium } from 'playwright'
+import { watchConsole } from './console-errors.mjs'
 
 const here = dirname(fileURLToPath(import.meta.url))
-const baseUrl = process.argv[2] ?? 'http://localhost:3210'
+const baseUrl = process.argv[2] ?? 'http://localhost:3210/character/'
 const outDir = process.argv[3] ?? join(here, '..', 'screenshots')
 const fixture = readFileSync(join(here, '..', 'packages', 'core', 'test', 'fixtures', 'athrynas-v43.json'), 'utf8')
 
@@ -28,8 +29,7 @@ const browser = await chromium.launch({
 
 try {
   const page = await browser.newPage({ viewport: { width: 1280, height: 900 } })
-  const consoleErrors = []
-  page.on('console', (m) => m.type() === 'error' && consoleErrors.push(m.text()))
+  const consoleErrors = watchConsole(page, baseUrl)
 
   await page.goto(baseUrl, { waitUntil: 'networkidle' })
 
@@ -163,7 +163,7 @@ try {
 
   await page.screenshot({ path: join(outDir, 'gear-mobile.png'), fullPage: false })
 
-  if (consoleErrors.length) failures.push(`console errors: ${consoleErrors.slice(0, 3).join(' | ')}`)
+  if (consoleErrors.own.length) failures.push(`console errors: ${consoleErrors.own.slice(0, 3).join(' | ')}`)
 } finally {
   await browser.close()
 }

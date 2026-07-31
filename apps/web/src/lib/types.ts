@@ -1,3 +1,5 @@
+import type { CharacterSnapshot } from "@poe2/core";
+
 export type SourceDoc = "atlas-tree-fundamentals" | "strategy-guide";
 export type Verification = "confirmed" | "unverified" | "conflicting";
 
@@ -155,9 +157,19 @@ export interface PersistedState {
     pinnedStrategyId?: string;
   };
   /**
-   * The imported-character slice lands with the analysis port. Progress for
-   * the reference routes is deliberately kept separate from it, so a schema
-   * change to a character can never discard checklist or Atlas progress.
+   * Character history.
+   *
+   * Deliberately its own slice, and deliberately only snapshots: a stored
+   * analysis would be hundreds of kilobytes and would put real pressure on a
+   * budget shared with checklist and Atlas progress. Keeping it separate also
+   * means a schema change here can never discard those.
+   *
+   * Added without a version bump on purpose — the reader merges over defaults,
+   * so an older payload missing this key gets the empty history rather than
+   * being discarded wholesale along with everything the player has ticked off.
    */
+  character: {
+    snapshots: CharacterSnapshot[];
+  };
   updatedAt: string;
 }

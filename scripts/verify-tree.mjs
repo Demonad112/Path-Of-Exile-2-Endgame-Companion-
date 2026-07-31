@@ -9,9 +9,10 @@
  */
 
 import { chromium } from 'playwright'
+import { watchConsole } from './console-errors.mjs'
 import { readFileSync, existsSync } from 'node:fs'
 
-const baseUrl = process.argv[2] ?? 'http://127.0.0.1:3210/'
+const baseUrl = process.argv[2] ?? 'http://127.0.0.1:3210/character/'
 const fixture = readFileSync('packages/core/test/fixtures/athrynas-v43.json', 'utf8')
 const tree = JSON.parse(readFileSync('packages/data/generated/passive-tree.json', 'utf8'))
 const model = JSON.parse(fixture).charModel
@@ -22,9 +23,7 @@ const failures = []
 
 const context = await browser.newContext({ viewport: { width: 1280, height: 900 }, colorScheme: 'dark' })
 const page = await context.newPage()
-const errors = []
-page.on('pageerror', (e) => errors.push(String(e)))
-page.on('console', (m) => m.type() === 'error' && errors.push(m.text()))
+const errors = watchConsole(page, baseUrl)
 
 await page.goto(baseUrl, { waitUntil: 'networkidle' })
 await page.getByRole('tab', { name: 'Paste data' }).click()
@@ -126,7 +125,7 @@ await page.getByLabel(/Show weapon set/).check()
 await page.waitForTimeout(400)
 console.log('weapon-set toggle: accepted')
 
-if (errors.length) failures.push(`console errors: ${errors.slice(0, 4).join(' | ')}`)
+if (errors.own.length) failures.push(`console errors: ${errors.own.slice(0, 4).join(' | ')}`)
 
 await browser.close()
 

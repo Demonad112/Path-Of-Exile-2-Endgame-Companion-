@@ -120,6 +120,56 @@ if (damage.primary?.name !== 'Ice Shot' || damage.primary?.dps !== 109859) {
 }
 console.log(`damage: ${damage.primary?.name} ${damage.primary?.dps}`)
 
+// The figure above is not unconditional, and the tool must say so. This export
+// carries 20 saved inputs, buff mode EFFECTIVE and no boss setting — the exact
+// combination the predecessor described as "PoB's default config".
+const under = damage.computedUnder
+if (under?.inputCount !== 20 || under?.versusBoss !== false || under?.buffMode !== 'effective') {
+  failures.push(`PoB config wrong: ${JSON.stringify(under).slice(0, 200)}`)
+}
+if (under?.describesTheseFigures !== true || !/pinnacle/i.test(under?.note ?? '')) {
+  failures.push('damage figure was not flagged as a non-boss number')
+}
+console.log(`  computed under: ${under?.conditionals?.length} conditionals, buffs ${under?.buffMode}, boss ${under?.versusBoss}`)
+
+// --- assessment -------------------------------------------------------------
+const assessment = await callTool('poe2_assess_build')
+if (assessment.tier !== 'C' || assessment.pool?.total !== 4091) {
+  failures.push(`assessment wrong: ${JSON.stringify({ tier: assessment.tier, pool: assessment.pool })}`)
+}
+// No ladder sample is configured here, so damage MUST be unscored rather than
+// graded against a threshold nobody measured.
+if (assessment.offence !== null || !/ladder sample/i.test(assessment.offenceUnscoredReason ?? '')) {
+  failures.push('damage was scored without a ladder sample to grade it against')
+}
+const risk = (assessment.weaknesses ?? []).find((w) => w.text.includes('one-shot'))
+if (!risk?.text.includes('Chaos 3,808') || !risk.text.includes('Physical 4,264')) {
+  failures.push(`one-shot risks incomplete: ${risk?.text}`)
+}
+console.log(`assess: tier ${assessment.tier} (${assessment.score}), damage unscored, ${assessment.weaknesses?.length} gaps`)
+
+// --- per-item attribution ---------------------------------------------------
+const ring = await callTool('poe2_item_contributions', { slotId: 8 })
+const ringFire = ring.contributions?.find((c) => c.stat === 'fireResistance')
+const ringLightning = ring.contributions?.find((c) => c.stat === 'lightningResistance')
+// The distinction the whole feature exists for: 22% fire against 24 points of
+// overcap costs nothing, while 35% lightning against 8 points breaks the cap.
+if (ringFire?.loss !== 0 || ringFire?.dropsBelowCap !== false) {
+  failures.push(`overcapped contribution should cost nothing: ${JSON.stringify(ringFire)}`)
+}
+if (ringLightning?.without !== 48 || ringLightning?.dropsBelowCap !== true) {
+  failures.push(`cap-breaking contribution wrong: ${JSON.stringify(ringLightning)}`)
+}
+console.log(
+  `contributions: ${ring.itemName} — fire costs nothing (overcap absorbs ${ringFire?.flat}), lightning drops 75 to ${ringLightning?.without}`,
+)
+
+const carriers = await callTool('poe2_item_contributions', { stat: 'lightningResistance' })
+if (carriers.carriedBy?.length !== 4 || carriers.summary?.overcap !== 8) {
+  failures.push(`stat carriers wrong: ${JSON.stringify(carriers.summary)}`)
+}
+console.log(`  lightning carried by ${carriers.carriedBy.length} items, ${carriers.summary.overcap} points of overcap`)
+
 // --- attribution ------------------------------------------------------------
 const armour = await callTool('poe2_find_stat_sources', { stat: 'armour' })
 if (armour.total !== 207 || armour.sources?.length !== 3) {

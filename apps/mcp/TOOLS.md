@@ -5,13 +5,15 @@
 
 # Tools
 
-28 tools. 24 are read-only; 4 marked ⚠️ act on a running Path of Building on this machine (`poe2_pob_load_character`, `poe2_pob_simulate_node`, `poe2_pob_simulate_mods`, `poe2_pob_rank_nodes`). Nothing here ever writes to a game account, a file, or poe.ninja.
+30 tools. 26 are read-only; 4 marked ⚠️ act on a running Path of Building on this machine (`poe2_pob_load_character`, `poe2_pob_simulate_node`, `poe2_pob_simulate_mods`, `poe2_pob_rank_nodes`). Nothing here ever writes to a game account, a file, or poe.ninja.
 
 | Tool | Purpose | Parameters |
 |---|---|---|
 | `poe2_load_character` | Fetch a Path of Exile 2 character from poe.ninja and make it the active character for every other tool. | `url`, `account`, `league`, `character`, `json` |
 | `poe2_get_defenses` | Defensive breakdown of the loaded character, led by the lowest maximum hit taken — the smallest single hit that kills. | — |
 | `poe2_get_skill_damage` | Per-skill damage for the loaded character, read verbatim from poe.ninja’s computed values — never recalculated. | `includeBuffs` |
+| `poe2_assess_build` | The overall verdict on the loaded character: a 0-1 score, an A-D tier, what is holding up, what the gaps are, and what the verdict assumes. | — |
+| `poe2_item_contributions` | What each equipped item contributes to the character sheet, and what the sheet would read without it — the question a gear swap actually poses. | `slotId`, `stat` |
 | `poe2_get_recommendations` | Ranked, quantified improvements for the loaded character, ordered by gain per unit of cost so a free reallocation outranks an equally-sized fix that costs currency. | — |
 | `poe2_find_stat_sources` | Attribute a stat to the exact items, passives, quests and attributes that grant it, using poe.ninja’s own per-stat breakdown. | `stat` |
 | `poe2_analyze_passive_tree` | Passive allocation for the loaded character, resolved against the tree data. | — |
@@ -68,9 +70,26 @@ _No parameters._
 
 **Get per-skill damage**
 
-Per-skill damage for the loaded character, read verbatim from poe.ninja’s computed values — never recalculated. Includes hit DPS, damage over time, use rate, critical strike, projectiles and the damage-type split. Charge-up skills report a hit rate below 1, meaning only that fraction of uses land.
+Per-skill damage for the loaded character, read verbatim from poe.ninja’s computed values — never recalculated. Includes hit DPS, damage over time, use rate, critical strike, projectiles and the damage-type split. Charge-up skills report a hit rate below 1, meaning only that fraction of uses land. Also reports the Path of Building configuration these figures were computed under — whether a boss was assumed, which buffs were active, and which conditionals were switched on — so the numbers are not read as unconditional.
 
 - `includeBuffs` *(optional)* — Include buff and herald skills, which deal damage over time only. Default false.
+
+### `poe2_assess_build`
+
+**Assess the build overall**
+
+The overall verdict on the loaded character: a 0-1 score, an A-D tier, what is holding up, what the gaps are, and what the verdict assumes. Defence and damage are weighted evenly, but damage is graded ONLY against figures observed on the ladder — with no sample the offence half is left unscored and the remainder rescaled, rather than graded against invented thresholds. Also reports keystone corrections: an allocated keystone that changes how another figure should be read, and any allocated keystone the character’s own stats contradict, whose corrections were therefore NOT applied.
+
+_No parameters._
+
+### `poe2_item_contributions`
+
+**Find what each item is holding up**
+
+What each equipped item contributes to the character sheet, and what the sheet would read without it — the question a gear swap actually poses. Losing a modifier is not the same as losing the stat: a ring granting 22% fire resistance on a build carrying 24 points of overcap costs nothing, while the same ring on a build with no overcap costs every point. Each entry reports the figure after the cap, the figure before it, and whether removing the item would drop a capped stat below its cap. Stats whose attribution does not agree with the character sheet are excluded and the reason given, rather than reported with false confidence.
+
+- `slotId` *(optional)* — Restrict to one equipment slot id, e.g. 8 for Ring 1.
+- `stat` *(optional)* — Restrict to one stat, e.g. "fireResistance" — returns the items carrying it, largest loss first.
 
 ### `poe2_get_recommendations`
 

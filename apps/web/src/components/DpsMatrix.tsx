@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import type { DpsSummary, SkillDamage } from '@poe2/core'
+import { describePobConfig, type DpsSummary, type PobConfig, type SkillDamage } from '@poe2/core'
 import { Empty, Panel, Tag, fmt, fmtCompact } from './ui'
 
 const DMG_VAR: Record<string, string> = {
@@ -98,7 +98,43 @@ function SkillRow({ s, isPrimary }: { s: SkillDamage; isPrimary: boolean }) {
   )
 }
 
-export function DpsMatrix({ dps }: { dps: DpsSummary }) {
+/**
+ * What the numbers above were computed under.
+ *
+ * Rendered only when poe.ninja and Path of Building agree on the damage figure,
+ * because that agreement is what makes PoB's saved configuration a description
+ * of the number on screen rather than of a different one.
+ *
+ * This replaces a claim the predecessor made without checking: that these
+ * figures came from PoB's defaults with no boss or buff settings applied. On
+ * the reference character that was wrong twice over.
+ */
+function ConfigCaveat({ config, applies }: { config: PobConfig | null; applies: boolean }) {
+  if (!config || !applies || config.inputCount === 0) return null
+
+  return (
+    <div className="mt-3 rounded-lg border border-line bg-surface-sunken px-3 py-2.5">
+      <p className="text-[11px] leading-relaxed text-ink-dim">{describePobConfig(config)}</p>
+      {!config.versusBoss ? (
+        <p className="mt-1 text-[11px] leading-relaxed text-warn">
+          Not a single-target number. Judging pinnacle-boss readiness against it would overstate this build.
+        </p>
+      ) : null}
+    </div>
+  )
+}
+
+export function DpsMatrix({
+  dps,
+  pobConfig = null,
+  configApplies = false,
+}: {
+  dps: DpsSummary
+  /** The configuration the attached Path of Building export was saved with. */
+  pobConfig?: PobConfig | null
+  /** Whether poe.ninja and PoB agree this is the same number. */
+  configApplies?: boolean
+}) {
   const [showAll, setShowAll] = useState(false)
 
   if (dps.unresolved) {
@@ -168,6 +204,8 @@ export function DpsMatrix({ dps }: { dps: DpsSummary }) {
             : `Show ${hidden} buff / herald skill${hidden === 1 ? '' : 's'} (damage over time only)`}
         </button>
       ) : null}
+
+      <ConfigCaveat config={pobConfig} applies={configApplies} />
 
       <p className="mt-3 text-[11px] leading-relaxed text-ink-mute">
         Charge-up skills report a hit rate below 1 — only that fraction of uses land, so their effective rate is lower

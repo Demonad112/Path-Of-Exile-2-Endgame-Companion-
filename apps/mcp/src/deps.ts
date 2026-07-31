@@ -6,16 +6,21 @@
  */
 
 export {
+  ATTRIBUTABLE_STATS,
   NODE_KIND,
   analyzeContent,
   analyzeItem,
+  attributionForSlot,
+  attributionForStat,
   auditCharacter,
   PobBridge,
   PobBridgeError,
   decodePobExport,
+  describePobConfig,
   editPobTree,
   findResistanceSwaps,
   findTierUpgrades,
+  itemsCarrying,
   normalizeItems,
   parseProfileUrl,
   pathToNode,
@@ -30,6 +35,7 @@ export {
   supportedStats,
   validateByName,
   validateSetup,
+  type AttributableStat,
 } from '@poe2/core'
 
 import { findMechanic, type Mechanic } from './mechanics.js'

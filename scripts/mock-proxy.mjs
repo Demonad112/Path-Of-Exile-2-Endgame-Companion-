@@ -28,6 +28,36 @@ createServer((req, res) => {
   }
 
   const url = new URL(req.url ?? '/', `http://127.0.0.1:${port}`)
+
+  // The ladder sample the build assessment grades damage against. Quartiles are
+  // placed so the fixture's 109,859 DPS lands in the upper quarter, which makes
+  // the scored branch observable — with no sample at all the offence half is
+  // left unscored, and a verification that only ever saw that branch would
+  // never exercise the grading.
+  if (url.pathname.startsWith('/api/ladder')) {
+    const league = url.searchParams.get('league')
+    if (!league) {
+      res.writeHead(400, { 'content-type': 'application/json' }).end('{"error":"league is required"}')
+      return
+    }
+    res.writeHead(200, { 'content-type': 'application/json; charset=utf-8' }).end(
+      JSON.stringify({
+        league,
+        class: url.searchParams.get('class'),
+        snapshot: 'mock',
+        sampleSize: 100,
+        totalInPool: 4213,
+        levelRange: { min: 98, max: 100 },
+        dps: { n: 100, p25: 20000, median: 50000, p75: 100000, max: 3000000 },
+        ehp: null,
+        pool: null,
+        caveat:
+          "Top-of-ladder sample only. poe.ninja's builds search returns a single page and ignores pagination, so these figures describe the highest-ranked builds matching the filter, not the player population.",
+      }),
+    )
+    return
+  }
+
   if (!url.pathname.startsWith('/api/character')) {
     res.writeHead(404, { 'content-type': 'application/json' }).end('{"error":"not found"}')
     return
