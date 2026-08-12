@@ -53,8 +53,19 @@ export function loadPassiveTree(): Promise<PassiveTree> {
 export function usePassiveTree(enabled: boolean): PassiveTreeState {
   const [state, setState] = useState<PassiveTreeState>(cached ? { status: 'ready', tree: cached } : { status: 'idle' })
 
+  // Depends on `enabled` alone, deliberately. Including `state.status` here
+  // made a failed fetch retry forever: the effect set `loading`, the status dep
+  // changed, the effect re-ran, the fetch rejected, the status went back to
+  // `error`, and round again — refetching a 4 MB artifact on every pass and
+  // re-running `analyzeCharacter` each time, because the state object's identity
+  // changed with it. The module-level cache below already makes the fetch
+  // once-per-page; this makes the failure terminal rather than a spin.
   useEffect(() => {
-    if (!enabled || state.status === 'ready') return
+    if (!enabled) return
+    if (cached) {
+      setState({ status: 'ready', tree: cached })
+      return
+    }
     let cancelled = false
     setState({ status: 'loading' })
 
@@ -69,7 +80,7 @@ export function usePassiveTree(enabled: boolean): PassiveTreeState {
     return () => {
       cancelled = true
     }
-  }, [enabled, state.status])
+  }, [enabled])
 
   return state
 }

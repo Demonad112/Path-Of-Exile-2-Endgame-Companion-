@@ -140,12 +140,19 @@ export function accuracyRule(ctx: OffenceContext): Recommendation[] {
   const hitChance = skill.hitChance
   if (hitChance <= 0 || hitChance >= 100) return []
 
-  const gain = (100 / hitChance - 1) * 100
+  // Accuracy scales HIT damage only. On a skill that also ticks, `100/hitChance
+  // - 1` is the gain on the hit half and overstates the gain on the skill —
+  // 25% on a skill that is 70% damage over time is really 7.5%. So the figure
+  // quoted is always against the skill's total, which collapses to the hit-only
+  // figure when there is no damage over time.
+  const missing = 100 - hitChance
+  const projectedHit = skill.dps * (100 / hitChance)
+  const projectedTotal = projectedHit + skill.dotDps
+  if (skill.totalDps <= 0) return []
+  const gain = (projectedTotal / skill.totalDps - 1) * 100
   if (gain < ACCURACY_MIN_GAIN) return []
 
-  const missing = 100 - hitChance
-  const projected = skill.dps * (100 / hitChance)
-
+  const ticks = dotShare(skill)
   const evidence: Evidence[] = [
     {
       kind: 'skill',
@@ -154,6 +161,17 @@ export function accuracyRule(ctx: OffenceContext): Recommendation[] {
       note: `${skill.name} hits ${hitChance.toFixed(1)}% of the time, so ${missing.toFixed(1)}% of its attacks deal nothing.`,
     },
   ]
+
+  if (ticks > 0.01) {
+    evidence.push({
+      kind: 'skill',
+      skill: skill.name,
+      dps: skill.dotDps,
+      note:
+        `${Math.round(ticks * 100)}% of ${skill.name}'s damage ticks rather than hits and is unaffected by accuracy, ` +
+        `so the gain quoted is against the skill's total rather than its hit damage alone.`,
+    })
+  }
 
   // Every other hitting skill shares the character's accuracy, so naming them
   // shows this is a build-wide loss rather than one skill's problem.
@@ -174,19 +192,19 @@ export function accuracyRule(ctx: OffenceContext): Recommendation[] {
       action: `Raise accuracy to reach 100% hit chance — worth about ${gain.toFixed(1)}% more damage on ${skill.name}.`,
       rationale:
         `${skill.name} lands ${hitChance.toFixed(1)}% of its attacks, so ${missing.toFixed(1)}% of them deal nothing at all. ` +
-        `Closing that is a ${gain.toFixed(1)}% damage gain by arithmetic alone — no scaling, no conditions` +
+        `Closing that is a ${gain.toFixed(1)}% gain on the skill's damage by arithmetic alone — no scaling, no conditions` +
         (alsoAffected.length ? `, and it applies to all ${alsoAffected.length + 1} of this build's hitting skills.` : '.'),
       impact: {
         stat: 'hitChance',
-        label: `${skill.name} hit DPS at full accuracy`,
-        from: skill.dps,
-        to: projected,
-        delta: projected - skill.dps,
+        label: `${skill.name} damage at full accuracy`,
+        from: skill.totalDps,
+        to: projectedTotal,
+        delta: projectedTotal - skill.totalDps,
         unit: 'flat',
-        // The fraction of attacks currently doing nothing: bounded 0-1 by
-        // construction and directly meaningful, rather than a damage figure
-        // divided by a cutoff nobody established.
-        significance: missing / 100,
+        // The share of this skill's reachable damage currently being missed.
+        // Bounded 0-1 by construction, and it accounts for the ticking half
+        // rather than a damage figure divided by a cutoff nobody established.
+        significance: (projectedTotal - skill.totalDps) / projectedTotal,
       },
       cost: {
         kind: 'gear',

@@ -18,6 +18,7 @@ export {
   decodePobExport,
   describePobConfig,
   editPobTree,
+  pobDpsAgreement,
   findResistanceSwaps,
   findTierUpgrades,
   itemsCarrying,

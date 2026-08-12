@@ -146,6 +146,22 @@ const ELEMENTS: ReadonlyArray<{ field: keyof CharacterSnapshot; type: 'fire' | '
   ])
 
 /**
+ * Maximum resistances, as poe.ninja reports them for this character.
+ *
+ * Per element rather than one figure, because they genuinely differ: a build can
+ * raise its cold maximum to 80 and leave fire at 75. A single scalar meant cold
+ * at 76 was announced as "reached cap" while it was still four points short —
+ * the exact failure the comment below warns against, made by the code beneath
+ * it. A bare number is still accepted and applies to all three.
+ */
+export type ResistanceMaxima = number | Partial<Record<'fire' | 'cold' | 'lightning', number>>
+
+function maxFor(maxima: ResistanceMaxima, type: 'fire' | 'cold' | 'lightning'): number {
+  if (typeof maxima === 'number') return maxima
+  return maxima[type] ?? 75
+}
+
+/**
  * Compare two snapshots.
  *
  * `resistanceMax` is the character's own maximum as poe.ninja reports it, not a
@@ -155,7 +171,7 @@ const ELEMENTS: ReadonlyArray<{ field: keyof CharacterSnapshot; type: 'fire' | '
 export function diffSnapshots(
   from: CharacterSnapshot,
   to: CharacterSnapshot,
-  resistanceMax = 75,
+  resistanceMax: ResistanceMaxima = 75,
 ): SnapshotDiff {
   const changes: MetricDelta[] = []
 
@@ -177,7 +193,11 @@ export function diffSnapshots(
     })
   }
 
-  changes.sort((a, b) => Math.abs(b.percent ?? 0) - Math.abs(a.percent ?? 0))
+  // A metric that grew from nothing has no percentage — `before` was 0 — and it
+  // is the largest relative change there is, not the smallest. Sorting it by 0
+  // buried "gained 2,000 energy shield" underneath a single point of resistance.
+  const rank = (c: MetricDelta) => (c.percent === null ? Infinity : Math.abs(c.percent))
+  changes.sort((a, b) => rank(b) - rank(a))
 
   // Crossing the cap is worth calling out separately: 74% to 75% is a one-point
   // change that matters far more than a twenty-point move mid-range.
@@ -186,8 +206,9 @@ export function diffSnapshots(
   for (const { field, type, label } of ELEMENTS) {
     const before = from[field] as number
     const after = to[field] as number
-    const wasCapped = isHealthy({ type, value: before, max: resistanceMax })
-    const isCapped = isHealthy({ type, value: after, max: resistanceMax })
+    const max = maxFor(resistanceMax, type)
+    const wasCapped = isHealthy({ type, value: before, max })
+    const isCapped = isHealthy({ type, value: after, max })
     if (!wasCapped && isCapped) newlyCapped.push(label)
     if (wasCapped && !isCapped) newlyUncapped.push(label)
   }
@@ -211,8 +232,16 @@ export function appendSnapshot(history: CharacterSnapshot[], next: CharacterSnap
       .filter((k) => k !== 'at' && k !== 'updatedUtc')
       .every((k) => last[k] === next[k])
 
-  const updated = unchanged ? mine : [...mine, next].slice(-MAX_SNAPSHOTS)
-  return [...others, ...updated]
+  // Return the ORIGINAL array when nothing was recorded, so a caller can detect
+  // the no-op by identity. Returning a fresh copy made every re-analysis look
+  // like a change: one import re-runs the analysis several times as the affix
+  // data, tree and ladder land, and each pass rewrote the whole persisted state
+  // to localStorage and woke every subscriber for a history that had not moved.
+  if (unchanged) return history
+
+  // Trim THIS character's history only — `others` belong to other characters
+  // and must survive untouched.
+  return [...others, ...[...mine, next].slice(-MAX_SNAPSHOTS)]
 }
 
 /** This character's snapshots, oldest first. */
@@ -228,7 +257,7 @@ export function historyFor(history: CharacterSnapshot[], key: string): Character
 export function latestDiff(
   history: CharacterSnapshot[],
   key: string,
-  resistanceMax = 75,
+  resistanceMax: ResistanceMaxima = 75,
 ): SnapshotDiff | null {
   const mine = historyFor(history, key)
   if (mine.length < 2) return null

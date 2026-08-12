@@ -186,3 +186,36 @@ describe('refusing to attribute what it cannot verify', () => {
     expect(out.excluded).toEqual([])
   })
 })
+
+/**
+ * Two items a player would genuinely wear together.
+ *
+ * Duplicate rings and jewels are routine, and keying name+base to a single item
+ * meant the second silently overwrote the first: every contribution from either
+ * resolved to the second, doubling its row and presenting the first as free to
+ * swap. The comment above the map already said this ambiguity was refused; the
+ * code did not refuse it.
+ */
+describe('two equipped items with the same name and base', () => {
+  it('attributes to neither rather than crediting one with both', () => {
+    const cm = unwrapCharModel(structuredClone(raw)) as CharModel
+    const ringOne = cm.items!.find((i) => i.itemSlot === 8)!
+    const ringTwo = cm.items!.find((i) => i.itemSlot === 9)!
+    // Make Ring 2 a duplicate of Ring 1 in name and base.
+    ringTwo.itemData!.name = ringOne.itemData!.name
+    ringTwo.itemData!.typeLine = ringOne.itemData!.typeLine
+    ringTwo.itemData!.baseType = ringOne.itemData!.baseType
+
+    const defense = analyzeDefense(cm)
+    const report = attributeToItems(indexBreakdowns(cm), normalizeItems(cm), defense)
+
+    const rows = report.items.filter((r) => r.slotId === 8 || r.slotId === 9)
+    const credited = rows.flatMap((r) => r.contributions)
+    // Neither ring may be credited with the other's modifiers. The ambiguous
+    // sources are reported as unmatched instead.
+    expect(credited.every((c) => Number.isFinite(c.value))).toBe(true)
+    expect(report.unmatchedSources.length).toBeGreaterThan(0)
+    // The duplicated name is among them, rather than resolved to one ring.
+    expect(report.unmatchedSources.join(' ')).toContain(ringOne.itemData!.name)
+  })
+})

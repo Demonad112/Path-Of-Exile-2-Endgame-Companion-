@@ -265,23 +265,21 @@ if (!crit) {
 // inventing a problem.
 if (ids.includes('dps-accuracy')) failures.push('an accuracy finding fired at 100% hit chance')
 
-// Unused affix slots: 10 active craftable items, 50 of 60 affixes filled.
-const openAffixes = (recs.recommendations ?? []).find((r) => r.id === 'gear-open-affixes')
-if (!openAffixes) {
-  failures.push('no finding was produced for the 10 empty affix slots')
-} else {
-  if (!/50 of a possible 60/.test(openAffixes.rationale)) {
-    failures.push(`affix budget misreported: ${openAffixes.rationale}`)
-  }
-  if (!/Loath Bane/.test(openAffixes.action)) failures.push('affix finding does not lead with the emptiest item')
-  const text = openAffixes.action + (openAffixes.evidence ?? []).map((e) => e.note).join(' ')
-  if (/Rapture Blast|Eagle Arrow/.test(text)) failures.push('affix finding counted the idle weapon set')
+// Unused affix slots: this character has NONE. All ten active items carry three
+// prefixes and three suffixes, and ten of those thirty-per-side are crafted or
+// desecrated rather than explicit. An earlier version counted only explicit mods
+// and so announced "10 empty affix slots" on completely full gear — the ten it
+// thought were empty were exactly the ten it could not see. Silence is the
+// correct output here, so silence is what is asserted.
+if (ids.includes('gear-open-affixes')) {
+  const bad = (recs.recommendations ?? []).find((r) => r.id === 'gear-open-affixes')
+  failures.push(`an affix opening was reported on fully-crafted gear: ${bad.action}`)
 }
 
 console.log(`recommendations: ${ids.length} findings — ${ids.slice(0, 3).join(', ')}…`)
 console.log(`  concrete swap: ${chaosSwap?.action?.slice(0, 96)}…`)
 console.log(`  offence: ${crit?.action?.slice(0, 96)}…`)
-console.log(`  affix slots: ${openAffixes?.action?.slice(0, 96)}…`)
+console.log('  affix slots: none — every active item is full, crafted and desecrated affixes included')
 
 // --- mechanics --------------------------------------------------------------
 const mech = await callTool('poe2_explain_mechanic', { query: 'armour' })

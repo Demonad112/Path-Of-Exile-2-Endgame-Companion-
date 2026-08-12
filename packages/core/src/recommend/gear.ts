@@ -42,7 +42,14 @@
 
 import type { EquippedItem } from '../model/slots.js'
 import type { DefenseSummary } from '../defense/index.js'
-import { AFFIX_CAPACITY, analyzeItem, findResistanceSwaps, summarizeSwaps, type ItemAnalysis } from '../gear/analyze.js'
+import {
+  AFFIX_CAPACITY,
+  OCCUPIES_AFFIX_SLOT,
+  analyzeItem,
+  findResistanceSwaps,
+  summarizeSwaps,
+  type ItemAnalysis,
+} from '../gear/analyze.js'
 import type { ModTiers } from '../gear/tiers.js'
 import type { Evidence, Recommendation } from './types.js'
 
@@ -80,12 +87,16 @@ interface OpenAffixes {
  *
  * ## Why an item can be skipped
  *
- * `affixCounts` counts explicit mods whose affix kind the ladder data resolved.
- * A mod it could not classify is therefore invisible to the count, and
- * subtracting from capacity would invent an open slot that is already full. So
- * an item carrying any unresolved explicit mod is excluded outright and
+ * `affixCounts` counts the slot-occupying mods whose affix kind the ladder data
+ * resolved. A mod it could not classify is therefore invisible to the count,
+ * and subtracting from capacity would invent an open slot that is already full.
+ * So an item carrying any unresolved slot-occupying mod is excluded outright and
  * reported, rather than guessed at — the count would be a floor, and a floor
  * presented as a total is exactly the failure this project avoids.
+ *
+ * That failure is not hypothetical. Counting only `explicit` here reported ten
+ * open slots on a character whose ten items are completely full, because the
+ * ten crafted and desecrated affixes holding those slots were invisible to it.
  *
  * Corrupted items are excluded because they cannot be modified, and Normal and
  * Unique items because they have no craftable affix budget.
@@ -106,7 +117,7 @@ function collectOpenAffixes(analysed: ItemAnalysis[]): {
     const per = AFFIX_CAPACITY[analysis.rarity]
     if (per === undefined || analysis.corrupted || analysis.itemLevel === null) continue
 
-    if (analysis.mods.some((m) => m.source === 'explicit' && m.kind === null)) {
+    if (analysis.mods.some((m) => OCCUPIES_AFFIX_SLOT.has(m.source) && m.kind === null)) {
       unverifiable.push(analysis)
       continue
     }

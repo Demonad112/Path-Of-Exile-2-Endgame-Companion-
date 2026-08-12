@@ -122,10 +122,42 @@ export async function fetchLadder(req: LadderRequest): Promise<LadderSummary | n
       typeof AbortSignal?.timeout === 'function' ? AbortSignal.timeout(req.timeoutMs ?? 15_000) : undefined
     const res = await req.fetch(`${base}/api/ladder?${params}`, signal ? { signal } : {})
     if (!res.ok) return null
-    const data = (await res.json()) as LadderSummary | null
-    // A response with neither figure carries nothing worth comparing against.
-    return data && (data.dps || data.ehp) ? data : null
+    return validateLadder(await res.json())
   } catch {
     return null
   }
+}
+
+/** Every quartile a band comparison reads, present and finite. */
+function validStat(value: unknown): LadderStat | null {
+  if (!value || typeof value !== 'object') return null
+  const s = value as Record<string, unknown>
+  const numeric = (['n', 'p25', 'median', 'p75', 'max'] as const).every(
+    (k) => typeof s[k] === 'number' && Number.isFinite(s[k]),
+  )
+  return numeric ? (value as LadderStat) : null
+}
+
+/**
+ * Accept a ladder sample only when it can actually be compared against.
+ *
+ * Casting the response straight to `LadderSummary` and checking only that `dps`
+ * was truthy let `{"dps": {}}` through — a partial protobuf decode, or a renamed
+ * field after a proxy deploy. Every band comparison then read `value >= undefined`,
+ * all of them false, and the build was graded "below the 25th percentile" against
+ * nothing at all. That is precisely the invented threshold this module exists to
+ * refuse, so a malformed sample is treated exactly like an absent one.
+ */
+export function validateLadder(raw: unknown): LadderSummary | null {
+  if (!raw || typeof raw !== 'object') return null
+  const data = raw as Record<string, unknown>
+
+  const dps = validStat(data.dps)
+  const ehp = validStat(data.ehp)
+  // A response with neither figure carries nothing worth comparing against.
+  if (!dps && !ehp) return null
+  if (typeof data.caveat !== 'string' || !data.caveat) return null
+  if (typeof data.sampleSize !== 'number' || !Number.isFinite(data.sampleSize)) return null
+
+  return { ...(data as unknown as LadderSummary), dps, ehp, pool: validStat(data.pool) }
 }

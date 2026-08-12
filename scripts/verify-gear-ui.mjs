@@ -117,13 +117,18 @@ try {
       }
     }
 
-    // --- unused affix slots, which do need the affix data -------------------
-    if (!/10 empty affix slots/.test(fText)) failures.push('the open-affix finding did not render its total')
-    if (!/50 of a possible 60/.test(fText)) failures.push('the open-affix finding did not render the budget')
+    // --- unused affix slots -------------------------------------------------
+    // This character has none: all ten active items are full once crafted and
+    // desecrated affixes are counted alongside explicit ones. An earlier version
+    // counted only explicit and rendered "10 empty affix slots" over completely
+    // full gear, so the absence is asserted rather than assumed.
+    if (/empty affix slot/.test(fText)) {
+      failures.push('an affix opening rendered on fully-crafted gear')
+    }
 
     await findings.first().screenshot({ path: join(outDir, 'findings-enriched.png') })
     console.log('findings: named the item and affix after the affix data loaded')
-    console.log('findings: offence priced at 7.4% crit, 10 empty affix slots reported')
+    console.log('findings: offence priced at 7.4% crit, no false affix openings')
   } else {
     failures.push('the recommendations panel did not render')
   }

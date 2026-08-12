@@ -53,6 +53,21 @@ export const AFFIX_CAPACITY: Readonly<Record<string, number>> = Object.freeze({
   Rare: 3,
 })
 
+/**
+ * Mod sources that consume one of those slots.
+ *
+ * Counting only `explicit` here was wrong, and wrong in the direction that
+ * invents free power: the reference character's ten active items carry ten
+ * crafted and desecrated affixes between them, so every one of them read as
+ * having a slot free when in fact all ten are full. An implicit, rune or
+ * enchant occupies no affix slot and is correctly absent.
+ */
+export const OCCUPIES_AFFIX_SLOT: ReadonlySet<ItemModAnalysis['source']> = new Set([
+  'explicit',
+  'crafted',
+  'desecrated',
+])
+
 export interface RolledStat {
   id: string
   value: number
@@ -386,8 +401,8 @@ export function analyzeItem(
 
   const tiered = mods.filter((m) => m.tier !== null).map((m) => m.tier!)
   const affixCounts = {
-    prefix: mods.filter((m) => m.kind === 'prefix' && m.source === 'explicit').length,
-    suffix: mods.filter((m) => m.kind === 'suffix' && m.source === 'explicit').length,
+    prefix: mods.filter((m) => m.kind === 'prefix' && OCCUPIES_AFFIX_SLOT.has(m.source)).length,
+    suffix: mods.filter((m) => m.kind === 'suffix' && OCCUPIES_AFFIX_SLOT.has(m.source)).length,
   }
 
   if (item.itemLevel === null) {

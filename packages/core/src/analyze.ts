@@ -154,7 +154,7 @@ function recommendationsFor(
  * configuration describes what PoB computed, and attaching it to a figure PoB
  * disagrees with would caveat the wrong number.
  */
-function pobDpsAgreement(report: ReconciliationReport | null): boolean | undefined {
+export function pobDpsAgreement(report: ReconciliationReport | null): boolean | undefined {
   const check = report?.checks.find((c) => c.stat.startsWith('dps:'))
   if (!check || check.severity === 'unresolved') return undefined
   return check.severity === 'match'

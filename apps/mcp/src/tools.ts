@@ -30,6 +30,7 @@ import {
   summarizeSwaps,
   parseProfileUrl,
   pathToNode,
+  pobDpsAgreement,
   readPlayerStats,
   rankNodesByMeasuredGain,
   resolveAllocation,
@@ -187,7 +188,10 @@ export const TOOLS: ToolDef[] = [
       // The saved configuration describes what Path of Building computed. It
       // only describes poe.ninja's figures too when the two agree that they are
       // the same number, so that agreement is stated rather than assumed.
-      const agrees = analysis.reconciliation?.checks.find((c) => c.stat.startsWith('dps:'))?.severity === 'match'
+      // Undefined when there was nothing to compare — no export, or no dps check.
+      // Collapsing that to `false` would claim the two engines disagree, which is
+      // a different and unearned statement.
+      const agrees = pobDpsAgreement(analysis.reconciliation)
       return {
         primary: dps.primary,
         skills,
@@ -196,13 +200,16 @@ export const TOOLS: ToolDef[] = [
         computedUnder: analysis.pobConfig
           ? {
               ...analysis.pobConfig,
-              describesTheseFigures: agrees,
+              describesTheseFigures: agrees ?? null,
               summary: describePobConfig(analysis.pobConfig),
-              note: agrees
-                ? analysis.pobConfig.versusBoss
-                  ? null
-                  : 'Not a single-target number. Judging pinnacle-boss readiness against it would overstate this build.'
-                : 'poe.ninja and Path of Building disagree on this character’s damage, so this configuration describes the export’s figure and not the one reported above.',
+              note:
+                agrees === undefined
+                  ? 'Whether this configuration also describes the figures above could not be established — the two engines’ damage numbers were never compared. It describes the Path of Building export either way.'
+                  : agrees
+                    ? analysis.pobConfig.versusBoss
+                      ? null
+                      : 'Not a single-target number. Judging pinnacle-boss readiness against it would overstate this build.'
+                    : 'poe.ninja and Path of Building disagree on this character’s damage, so this configuration describes the export’s figure and not the one reported above.',
             }
           : null,
       }

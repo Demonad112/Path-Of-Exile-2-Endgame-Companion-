@@ -12,6 +12,7 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
   analyzeCharacter,
+  unwrapCharModel,
   fetchLadder,
   NinjaClient,
   ModDatabase,
@@ -147,7 +148,11 @@ export async function loadCharacter(raw: unknown, source: string): Promise<Loade
     tree = undefined
   }
 
-  const model = (raw as { charModel?: CharModel }).charModel ?? (raw as CharModel)
+  // Unwrap through core rather than reading `.charModel` off the raw value: on a
+  // null or non-object payload the property read throws "Cannot read properties
+  // of null", the opaque failure this server exists to avoid, instead of the
+  // readable message `unwrapCharModel` raises.
+  const model = unwrapCharModel(raw)
   const analysis = await analyzeCharacter(raw, { tiers, tree, ladder: await ladderFor(model) })
   const setups = parseAllSetups(model.skills)
   current = { model, analysis, setups, supports: indexSupports(setups), source }

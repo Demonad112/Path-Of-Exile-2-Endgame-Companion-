@@ -70,7 +70,14 @@ export function subscribe(callback: () => void): () => void {
 export function setPersistedState(
   updater: (prev: PersistedState) => PersistedState
 ): void {
-  const next = updater(getSnapshot());
+  const prev = getSnapshot();
+  const next = updater(prev);
+  // An updater that returns exactly what it was given has decided nothing
+  // changed, and serialising the whole state to localStorage and waking every
+  // subscriber for that is pure cost. One character import runs the analysis
+  // several times as the affix data, tree and ladder arrive, and each pass
+  // re-recorded a history that had not moved.
+  if (next === prev) return;
   cache = next;
   cacheInitialized = true;
   writeToLocalStorage(next);

@@ -51,16 +51,30 @@ export function useCharacterHistory(analysis: Analysis | null): CharacterHistory
     if (!analysis.identity.account || !analysis.identity.name) return
 
     const next = toSnapshot(analysis, new Date().toISOString(), analysis.keystones)
-    setPersistedState((prev) => ({
-      ...prev,
-      character: { ...prev.character, snapshots: appendSnapshot(prev.character.snapshots, next) },
-    }))
+    setPersistedState((prev) => {
+      const snapshots = appendSnapshot(prev.character.snapshots, next)
+      // `appendSnapshot` hands back the same array when the figures have not
+      // moved. Returning `prev` unchanged then keeps the store from serialising
+      // the whole persisted state to localStorage and waking every subscriber —
+      // which it otherwise did on each of the several analysis passes one import
+      // performs as the affix data, tree and ladder arrive.
+      if (snapshots === prev.character.snapshots) return prev
+      return { ...prev, character: { ...prev.character, snapshots } }
+    })
   }, [analysis])
 
   if (!analysis) return { snapshots: [], diff: null }
 
   const key = snapshotKey(analysis.identity)
-  const resistanceMax = analysis.defense.resistances.find((r) => r.type === 'fire')?.max ?? 75
+  // Every element's own maximum. Reading fire's and applying it to all three
+  // announced "Cold reached cap" on a build whose cold maximum is 80 and whose
+  // cold resistance had only reached 76.
+  const maxOf = (type: string) => analysis.defense.resistances.find((r) => r.type === type)?.max ?? 75
+  const resistanceMax = {
+    fire: maxOf('fire'),
+    cold: maxOf('cold'),
+    lightning: maxOf('lightning'),
+  }
 
   return {
     snapshots: historyFor(state.character.snapshots, key),

@@ -165,3 +165,71 @@ describe('accumulating history', () => {
     expect(latestDiff(history, base.key)?.changes.map((c) => c.field)).toEqual(['life'])
   })
 })
+
+/**
+ * Three defects a code review found in this module, each pinned so it cannot
+ * come back quietly.
+ */
+describe('reporting a resistance as capped', () => {
+  const base = {
+    at: '2026-01-01T00:00:00Z',
+    updatedUtc: null,
+    key: 'a/b',
+    level: 90,
+    life: 3000,
+    energyShield: 0,
+    ward: 0,
+    armour: 0,
+    evasion: 0,
+    pool: 3000,
+    ehp: 3000,
+    fire: 75,
+    cold: 74,
+    lightning: 75,
+    chaos: 0,
+    dps: 100,
+    weakestHit: 100,
+    passives: 100,
+  }
+
+  it('uses each element’s own maximum, not one figure for all three', () => {
+    // Cold moves 74 -> 76 on a build whose cold maximum is 80. Applying fire's
+    // 75 to it announced "Cold reached cap" while it was four points short —
+    // the exact failure this function's own doc comment warns against.
+    const diff = diffSnapshots(base, { ...base, cold: 76 }, { fire: 75, cold: 80, lightning: 75 })
+    expect(diff.newlyCapped).toEqual([])
+  })
+
+  it('still reports a genuine cap crossing', () => {
+    const diff = diffSnapshots(base, { ...base, cold: 80 }, { fire: 75, cold: 80, lightning: 75 })
+    expect(diff.newlyCapped).toEqual(['Cold'])
+  })
+
+  it('accepts a bare number for all three', () => {
+    const diff = diffSnapshots(base, { ...base, cold: 75 }, 75)
+    expect(diff.newlyCapped).toEqual(['Cold'])
+  })
+
+  it('ranks a metric that grew from nothing first, not last', () => {
+    // Gaining 2,000 energy shield from zero has no percentage, and sorting that
+    // as 0 buried it under a single level.
+    const diff = diffSnapshots(base, { ...base, energyShield: 2000, level: 91 }, 75)
+    expect(diff.changes[0]!.field).toBe('energyShield')
+    expect(diff.changes[0]!.percent).toBeNull()
+  })
+
+  it('returns the original history unchanged when nothing moved', () => {
+    // Identity is the signal a caller uses to skip a localStorage write; a fresh
+    // copy made every re-analysis look like a change.
+    const history = [base]
+    expect(appendSnapshot(history, { ...base, at: '2026-02-02T00:00:00Z' })).toBe(history)
+  })
+
+  it('keeps other characters’ snapshots when trimming', () => {
+    const mine = Array.from({ length: MAX_SNAPSHOTS }, (_, i) => ({ ...base, at: `2026-01-${i + 1}T00:00:00Z` }))
+    const theirs = { ...base, key: 'other/char' }
+    const out = appendSnapshot([theirs, ...mine], { ...base, life: 4000 })
+    expect(out.filter((s) => s.key === 'other/char')).toHaveLength(1)
+    expect(out.filter((s) => s.key === 'a/b')).toHaveLength(MAX_SNAPSHOTS)
+  })
+})
