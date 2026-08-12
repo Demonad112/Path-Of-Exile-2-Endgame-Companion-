@@ -111,3 +111,112 @@ describe('not presenting a bound as an outcome', () => {
     expect(rec.rationale).toMatch(/cannot fully/)
   })
 })
+
+/**
+ * Unused affix slots.
+ *
+ * The one gear finding that needs no judgement about the build's direction: an
+ * empty slot gives nothing whatever the character is scaling. That is exactly
+ * what separates it from a tier upgrade, which this module refuses to rank for
+ * the reasons its own header sets out at length.
+ */
+function withItemPatched(slotId: number, patch: Record<string, unknown>) {
+  const clone = structuredClone(payload)
+  const cm = clone.charModel ?? clone
+  const item = cm.items.find((i: { itemSlot: number }) => i.itemSlot === slotId)
+  Object.assign(item.itemData, patch)
+  return clone
+}
+
+const openAffixes = enriched.recommendations.recommendations.find((r) => r.id === 'gear-open-affixes')!
+
+describe('unused affix slots', () => {
+  it('reports one finding for the whole kit, not one per item', () => {
+    // Ten items have room. Ten recommendations saying so would bury every other
+    // finding on the page.
+    expect(
+      enriched.recommendations.recommendations.filter((r) => r.id.startsWith('gear-open-affixes')),
+    ).toHaveLength(1)
+  })
+
+  it('counts the slots against the budget they belong to', () => {
+    // 10 active craftable items, 3 prefixes and 3 suffixes each, 50 filled.
+    expect(openAffixes.rationale).toContain('10 active items')
+    expect(openAffixes.rationale).toContain('50 of a possible 60')
+    expect(openAffixes.impact!.delta).toBe(10)
+    expect(openAffixes.impact!.significance).toBeCloseTo(10 / 60, 6)
+  })
+
+  it('leads with the emptiest item', () => {
+    // Loath Bane carries one prefix against a budget of three, and is the main
+    // hand — already flagged separately for lagging the rest of the kit.
+    expect(openAffixes.action).toContain('Loath Bane')
+    expect(openAffixes.action).toContain('2 prefixes')
+  })
+
+  it('ignores the idle weapon set', () => {
+    // Rapture Blast and Eagle Arrow have room too, and crafting into a set the
+    // character is not using is not an improvement.
+    const text = openAffixes.action + openAffixes.rationale + openAffixes.evidence.map((e) => e.note).join(' ')
+    expect(text).not.toContain('Rapture Blast')
+    expect(text).not.toContain('Eagle Arrow')
+  })
+
+  it('ignores an item that cannot be modified', async () => {
+    // A corrupted item's slots are not open in any useful sense.
+    const analysis = await analyzeCharacter(withItemPatched(1, { corrupted: true }), { tiers })
+    const rec = analysis.recommendations.recommendations.find((r) => r.id === 'gear-open-affixes')!
+    expect(rec.rationale).toContain('9 active items')
+    expect(rec.rationale).toContain('of a possible 54')
+  })
+
+  it('ignores rarities with no craftable affix budget', async () => {
+    // A unique's modifiers are fixed by the item, so "one suffix open" is
+    // meaningless on it.
+    const analysis = await analyzeCharacter(withItemPatched(1, { rarity: 'Unique' }), { tiers })
+    const rec = analysis.recommendations.recommendations.find((r) => r.id === 'gear-open-affixes')!
+    expect(rec.rationale).toContain('9 active items')
+    expect(rec.rationale).toContain('of a possible 54')
+  })
+
+  it('says nothing at all when every slot is full', async () => {
+    // Absent is not zero, but neither is it a finding: with no room anywhere
+    // there is nothing to report.
+    const clone = structuredClone(payload)
+    const cm = clone.charModel ?? clone
+    for (const item of cm.items) item.itemData.corrupted = true
+    const analysis = await analyzeCharacter(clone, { tiers })
+    expect(analysis.recommendations.recommendations.map((r) => r.id)).not.toContain('gear-open-affixes')
+  })
+})
+
+describe('when the affix data cannot classify a modifier', () => {
+  /** Give the helmet one explicit modifier the ladder data has never seen. */
+  function withUnknownMod() {
+    const clone = structuredClone(payload)
+    const cm = clone.charModel ?? clone
+    const helmet = cm.items.find((i: { itemSlot: number }) => i.itemSlot === 1)
+    helmet.itemData.mods.explicit.push({ id: 'NotARealModIdFromAnyPatch', stats: {} })
+    return clone
+  }
+
+  it('drops the item from the count rather than inventing an open slot', async () => {
+    // `affixCounts` can only count mods it could classify, so subtracting from
+    // capacity here would report a slot that is in fact occupied. The count
+    // would be a floor, and a floor presented as a total is the failure this
+    // project exists to avoid.
+    const analysis = await analyzeCharacter(withUnknownMod(), { tiers })
+    const rec = analysis.recommendations.recommendations.find((r) => r.id === 'gear-open-affixes')!
+    expect(rec.rationale).toContain('9 active items')
+    expect(rec.rationale).toContain('of a possible 54')
+  })
+
+  it('names the item it left out, so the total does not read as complete', async () => {
+    // Suppression is never silent anywhere else in this codebase either.
+    const analysis = await analyzeCharacter(withUnknownMod(), { tiers })
+    const rec = analysis.recommendations.recommendations.find((r) => r.id === 'gear-open-affixes')!
+    const notes = rec.evidence.map((e) => e.note).join(' ')
+    expect(notes).toContain('Hypnotic Halo')
+    expect(notes).toMatch(/cannot classify/)
+  })
+})

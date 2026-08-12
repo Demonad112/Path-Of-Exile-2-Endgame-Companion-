@@ -17,6 +17,7 @@ import { NO_KEYSTONE_EFFECTS, type KeystoneEffects } from '../keystones/index.js
 import { indexBreakdowns, projectStat, statSources, type BreakdownIndex } from '../model/breakdowns.js'
 import { normalizePassives, inactiveSetNodes, type PassiveAllocation } from '../model/passives.js'
 import { normalizeItems, type EquippedItem } from '../model/slots.js'
+import { OFFENCE_RULES } from './offence.js'
 import type {
   Cost,
   Evidence,
@@ -29,6 +30,7 @@ import type {
 
 export * from './types.js'
 export * from './gear.js'
+export * from './offence.js'
 
 /** Relative cost weights used for ranking. Free work is worth doing first. */
 const COST_WEIGHT: Record<Cost['kind'], number> = {
@@ -583,7 +585,19 @@ function collectUnresolved(ctx: Context): Unresolved[] {
   return out
 }
 
-const RULES = [resistanceRules, oneShotRule, armourRule, anointRule, weaponTierRule, idleWeaponSetRule] as const
+/**
+ * The offence rules read only `dps` and `items`, so they are declared against a
+ * narrower context in their own module and widen to this one here.
+ */
+const RULES: readonly ((ctx: Context) => Recommendation[])[] = [
+  resistanceRules,
+  oneShotRule,
+  armourRule,
+  anointRule,
+  weaponTierRule,
+  idleWeaponSetRule,
+  ...OFFENCE_RULES,
+]
 
 /**
  * `keystones` corrects findings an allocated keystone invalidates. Omitted, the

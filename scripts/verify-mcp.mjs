@@ -246,8 +246,42 @@ if (!chaosSwap) {
 if (ids.some((id) => id.startsWith('gear-tier-'))) {
   failures.push('tier upgrades are being ranked as recommendations')
 }
+// Offence: arithmetic on poe.ninja's own per-skill figures, never a DPS band.
+// 5% crit chance at 2.48x is 1 + 0.05 x 1.48 = 7.4%, and the one crit modifier
+// on the ACTIVE set (+37% on Brood Dart) is worth 1.8% of that. The other three
+// crit mods sit on the idle weapon set and must not be counted.
+const crit = (recs.recommendations ?? []).find((r) => r.id === 'dps-crit-uninvested')
+if (!crit) {
+  failures.push('no offence finding was produced for a build sitting at base crit chance')
+} else {
+  if (!/7\.4%/.test(crit.action)) failures.push(`crit finding does not state the real contribution: ${crit.action}`)
+  const notes = (crit.evidence ?? []).map((e) => e.note).join(' ')
+  if (!/Brood Dart/.test(notes)) failures.push('crit finding does not name the modifier it prices')
+  if (!/1\.8% more damage/.test(notes)) failures.push(`crit finding misprices the modifier: ${notes}`)
+  if (/Eagle Arrow|Rapture Blast/.test(notes)) failures.push('crit finding counted the idle weapon set')
+  if (crit.impact !== null) failures.push('crit finding invented a gain it cannot derive')
+}
+// Hit chance is 100% on this character, so an accuracy finding here would be
+// inventing a problem.
+if (ids.includes('dps-accuracy')) failures.push('an accuracy finding fired at 100% hit chance')
+
+// Unused affix slots: 10 active craftable items, 50 of 60 affixes filled.
+const openAffixes = (recs.recommendations ?? []).find((r) => r.id === 'gear-open-affixes')
+if (!openAffixes) {
+  failures.push('no finding was produced for the 10 empty affix slots')
+} else {
+  if (!/50 of a possible 60/.test(openAffixes.rationale)) {
+    failures.push(`affix budget misreported: ${openAffixes.rationale}`)
+  }
+  if (!/Loath Bane/.test(openAffixes.action)) failures.push('affix finding does not lead with the emptiest item')
+  const text = openAffixes.action + (openAffixes.evidence ?? []).map((e) => e.note).join(' ')
+  if (/Rapture Blast|Eagle Arrow/.test(text)) failures.push('affix finding counted the idle weapon set')
+}
+
 console.log(`recommendations: ${ids.length} findings — ${ids.slice(0, 3).join(', ')}…`)
 console.log(`  concrete swap: ${chaosSwap?.action?.slice(0, 96)}…`)
+console.log(`  offence: ${crit?.action?.slice(0, 96)}…`)
+console.log(`  affix slots: ${openAffixes?.action?.slice(0, 96)}…`)
 
 // --- mechanics --------------------------------------------------------------
 const mech = await callTool('poe2_explain_mechanic', { query: 'armour' })

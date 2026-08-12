@@ -90,8 +90,40 @@ try {
     if (/Raise chaos resistance by 57% to reach/.test(fText)) {
       failures.push('the vague chaos finding survived alongside the specific one')
     }
+
+    // --- offence, which needs no affix data and no PoB export ---------------
+    // 5% crit chance at 2.48x is 7.4%, and the single crit modifier on the
+    // ACTIVE set is worth 1.8% of it. Asserted in the rendered DOM because a
+    // finding that exists in the report and never reaches the page is not a
+    // finding the reader has.
+    if (!/crit adds only 7\.4%/.test(fText)) {
+      failures.push('the crit finding did not render its measured contribution')
+    }
+
+    // The evidence trail is collapsed by default, by design — so open it the
+    // way a reader would rather than asserting against text nobody can see.
+    const critCard = findings.first().locator('li', { hasText: 'crit adds only 7.4%' })
+    if (!(await critCard.count())) {
+      failures.push('the crit finding did not render as its own card')
+    } else {
+      await critCard.first().getByRole('button', { name: /^Evidence \(/ }).click()
+      const critText = await critCard.first().innerText()
+      if (!/Brood Dart/.test(critText)) failures.push('the crit evidence did not name the modifier it prices')
+      if (!/worth 1\.8% more damage/.test(critText)) {
+        failures.push(`the crit evidence did not price the modifier: ${critText.slice(0, 200)}`)
+      }
+      if (/Eagle Arrow|Rapture Blast/.test(critText)) {
+        failures.push('the crit evidence rendered modifiers from the idle weapon set')
+      }
+    }
+
+    // --- unused affix slots, which do need the affix data -------------------
+    if (!/10 empty affix slots/.test(fText)) failures.push('the open-affix finding did not render its total')
+    if (!/50 of a possible 60/.test(fText)) failures.push('the open-affix finding did not render the budget')
+
     await findings.first().screenshot({ path: join(outDir, 'findings-enriched.png') })
     console.log('findings: named the item and affix after the affix data loaded')
+    console.log('findings: offence priced at 7.4% crit, 10 empty affix slots reported')
   } else {
     failures.push('the recommendations panel did not render')
   }

@@ -47,6 +47,31 @@ export const POOL_THIN = 4000
 export const ONE_SHOT_RATIO = 0.4
 
 /**
+ * Below this, critical strikes contribute so little that scaling them is not
+ * the lever — expressed as a damage multiplier over never critting, so 1.15
+ * means "crit is adding 15%".
+ *
+ * This is a judgement call about when the split between crit chance and crit
+ * multiplier has stopped paying, NOT a DPS band. The distinction matters: it
+ * grades a build against its own arithmetic rather than against an outside
+ * figure nobody measured, which is why it can live here when a DPS cutoff
+ * could not.
+ */
+export const CRIT_UNINVESTED = 1.15
+
+/**
+ * Above this share of a skill's damage, the skill is driven by damage over
+ * time and hit-scaling advice would send it the wrong way.
+ */
+export const DOT_DOMINANT = 0.6
+
+/**
+ * Smallest damage gain from reaching full hit chance that is worth raising, in
+ * percent. Below it the finding is technically true and practically noise.
+ */
+export const ACCURACY_MIN_GAIN = 3
+
+/**
  * The target a resistance is judged against.
  *
  * Elemental resistances use the character's OWN maximum as poe.ninja reports

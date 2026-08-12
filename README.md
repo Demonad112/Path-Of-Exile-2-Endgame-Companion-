@@ -25,6 +25,9 @@ Two consequences that surprise people, both deliberate:
   against figures observed on the ladder. With no sample the offence half is
   left unscored and the remainder rescaled, rather than measured against
   thresholds nobody established. There are no DPS constants in this codebase.
+  Damage findings still appear, because they are arithmetic on the character's
+  own figures — missing 8% of your attacks costs exactly `100/92 - 1` of your
+  damage whatever a "good" DPS number happens to be this patch.
 - **A keystone is not trusted because it is allocated.** A node appearing in an
   allocated list is not proof it is doing anything — a real ladder character
   carried Chaos Inoculation while reporting 1,823 life and 54% chaos
@@ -36,7 +39,7 @@ Two consequences that surprise people, both deliberate:
 
 | | |
 |---|---|
-| `packages/core` | Pure analysis. No I/O, no framework — `fetch` and the Path of Building transport are injected. 327 tests. |
+| `packages/core` | Pure analysis. No I/O, no framework — `fetch` and the Path of Building transport are injected. 357 tests. |
 | `packages/data` | Generated game data artifacts and the scripts that extract them. See [PROVENANCE.md](packages/data/PROVENANCE.md). |
 | `apps/web` | Static Next.js export on GitHub Pages. Five routes. |
 | `apps/mcp` | 30-tool Model Context Protocol server over stdio. See [TOOLS.md](apps/mcp/TOOLS.md). |
@@ -53,9 +56,10 @@ break this.
 - `/character` — paste a poe.ninja profile URL or a Path of Building code and
   get an overall assessment, ranked findings, defence led by the smallest hit
   that kills, per-skill damage with the configuration it was computed under,
-  what each equipped item is holding up and what a swap would cost, per-item
-  modifier tiers, a rendered passive tree, progress since the last import, and
-  cross-validation against Path of Building's own engine.
+  what accuracy and critical strikes are actually returning, what each equipped
+  item is holding up and what a swap would cost, per-item modifier tiers and
+  unused affix slots, a rendered passive tree, progress since the last import,
+  and cross-validation against Path of Building's own engine.
 - `/checklist` — progression roadmap from campaign end through the full
   301-point Atlas tree, with benchmark gates and common-mistake warnings.
 - `/atlas` — ordered Atlas cluster allocation, memory forks, and per-mechanic
@@ -114,7 +118,7 @@ Verification, all of which should pass before any change is called done:
 
 ```bash
 npm run typecheck                  # builds core first; the script handles it
-npm test                           # 327 tests
+npm test                           # 357 tests
 npm run build                      # core -> dist, then the web static export
 node scripts/verify-mcp.mjs        # drives the real MCP binary over stdio
 npm run tools -w @poe2/mcp         # regenerates TOOLS.md; CI fails if stale

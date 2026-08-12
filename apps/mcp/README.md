@@ -182,6 +182,12 @@ prove them:
   beyond the class pool are not modelled — and a modifier the table does not
   list reports as `unknown`, never as a violation, because absence is not
   evidence of illegality.
+- **Whether a different modifier would beat the one you have.** The offence
+  findings price what a modifier currently returns — a +37% critical damage
+  bonus at 5% crit chance is worth 1.8% more damage, and that is arithmetic.
+  Whether flat damage in that slot would be worth more depends on where the
+  build is heading, so it is stated as a measurement and the choice is left to
+  you. The same reason tier upgrades are listed but never ranked.
 - **Whether a passive node is the *right* choice.**
   `poe2_suggest_tree_routes` reports what a node costs and what it prints,
   ranked by value per point. Which node suits a build depends on where that
