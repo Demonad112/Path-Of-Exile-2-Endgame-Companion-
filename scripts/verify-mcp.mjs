@@ -134,8 +134,20 @@ console.log(`  computed under: ${under?.conditionals?.length} conditionals, buff
 
 // --- assessment -------------------------------------------------------------
 const assessment = await callTool('poe2_assess_build')
-if (assessment.tier !== 'C' || assessment.pool?.total !== 4091) {
-  failures.push(`assessment wrong: ${JSON.stringify({ tier: assessment.tier, pool: assessment.pool })}`)
+// No ladder sample here, so there is no single tier to report: the verdict is
+// the interval defence alone can justify. A point value would be asserting the
+// half nobody measured, and `defence / 0.5` asserted the flattering end of it.
+if (assessment.tier !== null || assessment.score !== null) {
+  failures.push(`a single tier was claimed without a damage grade: ${assessment.tier} (${assessment.score})`)
+}
+if (assessment.tierRange?.worst !== 'D' || assessment.tierRange?.best !== 'B') {
+  failures.push(`tier range wrong: ${JSON.stringify(assessment.tierRange)}`)
+}
+if (assessment.scoreRange?.min !== 0.15 || assessment.scoreRange?.max !== 0.65) {
+  failures.push(`score range wrong: ${JSON.stringify(assessment.scoreRange)}`)
+}
+if (assessment.pool?.total !== 4091) {
+  failures.push(`assessment pool wrong: ${JSON.stringify(assessment.pool)}`)
 }
 // No ladder sample is configured here, so damage MUST be unscored rather than
 // graded against a threshold nobody measured.
@@ -146,7 +158,10 @@ const risk = (assessment.weaknesses ?? []).find((w) => w.text.includes('one-shot
 if (!risk?.text.includes('Chaos 3,808') || !risk.text.includes('Physical 4,264')) {
   failures.push(`one-shot risks incomplete: ${risk?.text}`)
 }
-console.log(`assess: tier ${assessment.tier} (${assessment.score}), damage unscored, ${assessment.weaknesses?.length} gaps`)
+console.log(
+  `assess: ${assessment.tierRange.worst}-${assessment.tierRange.best} ` +
+    `(${assessment.scoreRange.min}-${assessment.scoreRange.max}), damage unscored, ${assessment.weaknesses?.length} gaps`,
+)
 
 // --- per-item attribution ---------------------------------------------------
 const ring = await callTool('poe2_item_contributions', { slotId: 8 })

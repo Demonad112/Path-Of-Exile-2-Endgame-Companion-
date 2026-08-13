@@ -93,15 +93,53 @@ describe('offence is never graded against invented thresholds', () => {
       life: 5000,
     }
     const assessment = assessBuild({ defense: capped, dps })
-    expect(assessment.note).toContain('Scored on defences only')
+    expect(assessment.note).toContain('depends on damage, which was not graded')
     expect(assessment.note).toContain('No ladder sample')
   })
 
-  it('rescales rather than punishing a build for data we do not have', () => {
+  it('reports a range rather than a point when damage was not graded', () => {
     const unscored = assessBuild({ defense, dps })
-    // Defence alone is 0.15; rescaled over the 0.5 defence half that is 0.30.
+    // Defence alone is 0.15. Damage is worth up to another 0.5 and was not
+    // measured, so the score is somewhere in [0.15, 0.65] and no single figure
+    // is asserted.
     expect(unscored.defence).toBe(0.15)
-    expect(unscored.score).toBe(0.3)
+    expect(unscored.score).toBeNull()
+    expect(unscored.tier).toBeNull()
+    expect(unscored.scoreRange).toEqual({ min: 0.15, max: 0.65 })
+    expect(unscored.tierRange).toEqual({ worst: 'D', best: 'B' })
+  })
+
+  it('never lets a missing sample promote a build', () => {
+    // The defect this replaced: `defence / 0.5` scaled a perfect defensive half
+    // to a full 1.00 and graded it A, while the SAME build with a sample and
+    // mid-table damage graded B. A comparison that fails must not improve a
+    // verdict.
+    const perfect = {
+      ...defense,
+      life: 9000,
+      resistances: defense.resistances.map((r) => ({ ...r, value: r.max, underCap: 0, capped: true })),
+    }
+
+    const withoutSample = assessBuild({ defense: perfect, dps })
+    expect(withoutSample.defence).toBe(0.5)
+    expect(withoutSample.tier).toBeNull()
+    expect(withoutSample.tierRange).toEqual({ worst: 'B', best: 'A' })
+
+    // With a sample and mid-table damage the real answer is B, and B sits
+    // inside the range that was reported without one. The range never claimed
+    // better than the evidence allowed.
+    const withSample = assessBuild({ defense: perfect, dps, ladder: ladder() })
+    expect(withSample.tier).toBe('B')
+    expect(withSample.score).toBe(0.65)
+  })
+
+  it('does not punish for the missing half either', () => {
+    // The opposite error, and the reason the floor is not reported as the
+    // answer: the bottom of the range is what the build scores if its damage is
+    // worth nothing at all, which is not a claim being made.
+    const unscored = assessBuild({ defense, dps })
+    expect(unscored.scoreRange!.min).toBe(unscored.defence)
+    expect(unscored.scoreRange!.max).toBe(Math.round((unscored.defence + 0.5) * 100) / 100)
   })
 
   it('grades against the sample once there is one', () => {
@@ -221,7 +259,9 @@ describe('tiers', () => {
     ] as const) {
       expect(grade(score)).toBe(tier)
     }
-    expect(assessBuild({ defense, dps }).tier).toBe('C')
+    // Damage is ungraded on this character, so there is no single tier to band.
+    expect(assessBuild({ defense, dps }).tier).toBeNull()
+    expect(assessBuild({ defense, dps, ladder: ladder() }).tier).toBe('C')
   })
 })
 
@@ -253,7 +293,8 @@ describe('through the full analysis', () => {
     expect(analysis.assessment.pool.total).toBe(
       analysis.defense.life + analysis.defense.energyShield + analysis.defense.ward,
     )
-    expect(analysis.assessment.tier).toBe('C')
+    expect(analysis.assessment.tier).toBeNull()
+    expect(analysis.assessment.tierRange).toEqual({ worst: 'D', best: 'B' })
     expect(analysis.assessment.offence).toBeNull()
   })
 

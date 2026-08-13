@@ -54,8 +54,11 @@ try {
   await page.waitForFunction(() => !document.body.innerText.includes('Loading passive tree'), { timeout: 30_000 })
 
   const assessmentText = await assessment.innerText()
-  if (!/\bC\b/.test(assessmentText) || !/0\.30/.test(assessmentText)) {
-    failures.push(`assessment did not render tier C at 0.30: ${assessmentText.slice(0, 200)}`)
+  // No ladder sample, so the headline is the interval defence alone justifies
+  // rather than a single letter. `defence / 0.5` used to render a confident C
+  // here, and on a build with perfect defences it rendered an A.
+  if (!/D[–-]B/.test(assessmentText) || !/0\.15[–-]0\.65/.test(assessmentText)) {
+    failures.push(`assessment did not render the D-B range: ${assessmentText.slice(0, 200)}`)
   }
   // Both one-shot risks, not just the lowest. Naming only chaos hid the
   // physical gap, which is the more dangerous of the two in maps.
@@ -73,7 +76,7 @@ try {
     failures.push('the pool is not labelled by what it actually contains')
   }
   await assessment.screenshot({ path: join(outDir, 'assessment.png') })
-  console.log('assessment: tier C at 0.30, both one-shot risks named, damage left unassessed')
+  console.log('assessment: D-B at 0.15-0.65, both one-shot risks named, damage left unassessed')
 
   // --- Path of Building configuration caveat --------------------------------
   const damage = panel(page, 'Damage')

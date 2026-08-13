@@ -13,11 +13,48 @@
 import type { BuildAssessment, KeystoneEffects } from '@poe2/core'
 import { Panel, Tag, fmt } from './ui'
 
-const TIER_TONE: Record<BuildAssessment['tier'], string> = {
+const TIER_TONE: Record<'A' | 'B' | 'C' | 'D', string> = {
   A: 'text-good',
   B: 'text-ink',
   C: 'text-warn',
   D: 'text-danger',
+}
+
+/**
+ * The headline, which is a range whenever damage could not be graded.
+ *
+ * A single letter over one measured half would be a guess, and the guess the
+ * arithmetic used to make was the flattering one — perfect defences and no
+ * ladder sample read as a confident A. A range says the same thing without
+ * claiming the half nobody measured.
+ *
+ * The tone follows the WORST end. A build that might be a D should not be
+ * painted in the colour reserved for an A.
+ */
+function Verdict({ assessment }: { assessment: BuildAssessment }) {
+  const { tier, tierRange, score, scoreRange } = assessment
+
+  if (tier && score !== null) {
+    return (
+      <div className="flex items-baseline gap-2">
+        <span className={`text-3xl leading-none font-semibold ${TIER_TONE[tier]}`}>{tier}</span>
+        <span className="tabular text-sm text-ink-dim">{score.toFixed(2)}</span>
+      </div>
+    )
+  }
+  if (!tierRange || !scoreRange) return null
+
+  const same = tierRange.worst === tierRange.best
+  return (
+    <div className="flex items-baseline gap-2">
+      <span className={`text-3xl leading-none font-semibold ${TIER_TONE[tierRange.worst]}`}>
+        {same ? tierRange.worst : `${tierRange.worst}–${tierRange.best}`}
+      </span>
+      <span className="tabular text-sm text-ink-dim">
+        {same ? scoreRange.min.toFixed(2) : `${scoreRange.min.toFixed(2)}–${scoreRange.max.toFixed(2)}`}
+      </span>
+    </div>
+  )
 }
 
 function Half({ label, value, of, unscored }: { label: string; value: number | null; of: number; unscored?: string }) {
@@ -52,14 +89,7 @@ export function BuildScore({ assessment, keystones }: { assessment: BuildAssessm
     <Panel
       title="Assessment"
       subtitle="Defence and damage weighted evenly. Damage is graded only against figures observed on the ladder — never against invented thresholds."
-      action={
-        <div className="flex items-baseline gap-2">
-          <span className={`text-3xl leading-none font-semibold ${TIER_TONE[assessment.tier]}`}>
-            {assessment.tier}
-          </span>
-          <span className="tabular text-sm text-ink-dim">{assessment.score.toFixed(2)}</span>
-        </div>
-      }
+      action={<Verdict assessment={assessment} />}
     >
       <p className="max-w-prose text-sm leading-relaxed text-balance text-ink">{assessment.note}</p>
 

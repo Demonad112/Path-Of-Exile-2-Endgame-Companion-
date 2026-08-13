@@ -8,8 +8,9 @@
  *  1. **Nothing is graded against a threshold nobody measured.** Defence is
  *     scored against bands declared in `thresholds.ts` and labelled as
  *     judgement calls. Offence is scored ONLY against figures observed on the
- *     ladder; with no sample, the offence half is dropped and the remainder
- *     rescaled, so a build is never punished for data we don't have.
+ *     ladder. With no sample the score becomes a RANGE rather than a point —
+ *     see `score` below for why neither rescaling up nor reporting the floor
+ *     is honest.
  *  2. **Keystones can invalidate a verdict, so they are applied first.**
  *     Calling a Chaos Inoculation build "thin on life" or "short on chaos
  *     resistance" is not a harsh verdict, it is a wrong one.
@@ -31,10 +32,38 @@ export interface Weakness {
 
 export type BuildTier = 'A' | 'B' | 'C' | 'D'
 
+/** Each half of the score. Defence and damage are weighted evenly. */
+const OFFENCE_WEIGHT = 0.5
+
+function tierFor(score: number): BuildTier {
+  return score >= 0.75 ? 'A' : score >= 0.5 ? 'B' : score >= 0.3 ? 'C' : 'D'
+}
+
 export interface BuildAssessment {
-  /** 0-1. Rescaled when offence could not be assessed — see `offence`. */
-  score: number
-  tier: BuildTier
+  /**
+   * 0-1, or null when the damage half could not be graded.
+   *
+   * Null rather than a rescaled figure. Filling the gap by scaling the measured
+   * half up — `defence / 0.5` — asserts that damage would have scored the same
+   * proportion as defence, which is an invented number, and at the top of the
+   * scale it is the most flattering one available: a build with perfect defences
+   * and no ladder sample scored 1.00 and graded **A**, where the same build with
+   * a sample and mid-table damage graded **B**. A failed comparison must not
+   * improve a verdict.
+   *
+   * The floor is no better, in the other direction: reporting `defence` alone
+   * out of 1.0 punishes a build for evidence nobody could collect.
+   *
+   * With one half measured the honest answer is neither point but the interval
+   * between them, which is what `scoreRange` carries.
+   */
+  score: number | null
+  /** The bounds `score` lies within. Null when the score is known exactly. */
+  scoreRange: { min: number; max: number } | null
+  /** Null when the score is a range; read `tierRange` instead. */
+  tier: BuildTier | null
+  /** The tiers the build falls between. Null when the tier is known exactly. */
+  tierRange: { worst: BuildTier; best: BuildTier } | null
   /** One sentence naming the limiting factor. */
   note: string
   strengths: string[]
@@ -251,25 +280,37 @@ export function assessBuild(input: BuildAssessmentInput): BuildAssessment {
 
   // --- Score ---------------------------------------------------------------
   // Defence and offence are weighted evenly at 0.5 each.
-  let defence = 0
-  if (pool.total > POOL_GOOD) defence += 0.3
-  else if (pool.total >= POOL_THIN) defence += 0.15
-  if (elemental.length && uncapped.length === 0) defence += 0.15
+  let defenceRaw = 0
+  if (pool.total > POOL_GOOD) defenceRaw += 0.3
+  else if (pool.total >= POOL_THIN) defenceRaw += 0.15
+  if (elemental.length && uncapped.length === 0) defenceRaw += 0.15
   // Chaos immunity earns the chaos credit outright — it is strictly better than
   // any resistance value, so scoring it as a miss would penalise it.
-  if (keystones.chaosImmune || (chaos && chaos.value >= CHAOS_TARGET)) defence += 0.05
+  if (keystones.chaosImmune || (chaos && chaos.value >= CHAOS_TARGET)) defenceRaw += 0.05
+  // 0.3 + 0.15 + 0.05 is 0.49999999999999994 in binary floating point, which
+  // rendered as a perfect half everywhere it was formatted while comparing as
+  // less than one. Rounded once, here, so every figure derived from it agrees.
+  const defence = Math.round(defenceRaw * 100) / 100
 
-  const raw = offence === null ? defence / 0.5 : defence + offence
-  const score = Math.round(Math.min(1, Math.max(0, raw)) * 100) / 100
-  const tier: BuildTier = score >= 0.75 ? 'A' : score >= 0.5 ? 'B' : score >= 0.3 ? 'C' : 'D'
+  // With both halves measured the score is a point. With only defence measured
+  // it is the interval [defence, defence + 0.5] — every value damage could still
+  // turn out to be worth — and neither end of it is asserted as the answer.
+  const round = (n: number) => Math.round(Math.min(1, Math.max(0, n)) * 100) / 100
+  const score = offence === null ? null : round(defence + offence)
+  const scoreRange = offence === null ? { min: round(defence), max: round(defence + OFFENCE_WEIGHT) } : null
+  const tier = score === null ? null : tierFor(score)
+  const tierRange = scoreRange ? { worst: tierFor(scoreRange.min), best: tierFor(scoreRange.max) } : null
 
   let note: string
   if (uncapped.length) {
     note = 'Uncapped elemental resistances are the biggest thing holding this back.'
   } else if (pool.total < POOL_THIN) {
     note = `Resistances are handled — the ${pool.total.toLocaleString()} ${poolLabel} is the limiting factor.`
-  } else if (offence === null) {
-    note = `Scored on defences only — ${offenceUnscoredReason}`
+  } else if (offence === null && tierRange) {
+    note =
+      tierRange.worst === tierRange.best
+        ? `Graded on defences alone, which put this at ${tierRange.worst} whatever the damage turns out to be — ${offenceUnscoredReason}`
+        : `Defences alone put this between ${tierRange.worst} and ${tierRange.best}; where it lands depends on damage, which was not graded — ${offenceUnscoredReason}`
   } else if (ladderDps && damage < ladderDps.median) {
     note = 'Defences hold up; damage is the weaker half of this build.'
   } else {
@@ -281,7 +322,9 @@ export function assessBuild(input: BuildAssessmentInput): BuildAssessment {
 
   return {
     score,
+    scoreRange,
     tier,
+    tierRange,
     note,
     strengths,
     weaknesses,

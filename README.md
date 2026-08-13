@@ -21,13 +21,17 @@ allocation planner, and a farming dashboard.
 
 Two consequences that surprise people, both deliberate:
 
-- **The build score's damage half is often blank.** Damage is graded only
-  against figures observed on the ladder. With no sample the offence half is
-  left unscored and the remainder rescaled, rather than measured against
-  thresholds nobody established. There are no DPS constants in this codebase.
-  Damage findings still appear, because they are arithmetic on the character's
-  own figures — missing 8% of your attacks costs exactly `100/92 - 1` of your
-  damage whatever a "good" DPS number happens to be this patch.
+- **The build score is often a range, not a letter.** Damage is graded only
+  against figures observed on the ladder, never against thresholds nobody
+  established, so with no sample there is no single overall grade to give. The
+  verdict becomes the interval defence alone can justify — `D–B` rather than a
+  confident `C`. Scaling the measured half up to fill the gap was worse than it
+  sounds: it graded a build with perfect defences and no sample an **A**, where
+  the same build with a sample and mid-table damage graded **B**. A failed
+  comparison must not improve a verdict. There are no DPS constants in this
+  codebase — though damage *findings* still appear, because those are arithmetic
+  on the character's own figures: missing 8% of your attacks costs exactly
+  `100/92 - 1` of your damage whatever a "good" DPS number is this patch.
 - **A keystone is not trusted because it is allocated.** A node appearing in an
   allocated list is not proof it is doing anything — a real ladder character
   carried Chaos Inoculation while reporting 1,823 life and 54% chaos
@@ -39,7 +43,7 @@ Two consequences that surprise people, both deliberate:
 
 | | |
 |---|---|
-| `packages/core` | Pure analysis. No I/O, no framework — `fetch` and the Path of Building transport are injected. 372 tests. |
+| `packages/core` | Pure analysis. No I/O, no framework — `fetch` and the Path of Building transport are injected. 374 tests. |
 | `packages/data` | Generated game data artifacts and the scripts that extract them. See [PROVENANCE.md](packages/data/PROVENANCE.md). |
 | `apps/web` | Static Next.js export on GitHub Pages. Five routes. |
 | `apps/mcp` | 30-tool Model Context Protocol server over stdio. See [TOOLS.md](apps/mcp/TOOLS.md). |
@@ -118,7 +122,7 @@ Verification, all of which should pass before any change is called done:
 
 ```bash
 npm run typecheck                  # builds core first; the script handles it
-npm test                           # 372 tests
+npm test                           # 374 tests
 npm run build                      # core -> dist, then the web static export
 node scripts/verify-mcp.mjs        # drives the real MCP binary over stdio
 npm run tools -w @poe2/mcp         # regenerates TOOLS.md; CI fails if stale

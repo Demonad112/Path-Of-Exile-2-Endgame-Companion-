@@ -1226,8 +1226,13 @@ function summarize(loaded: ReturnType<typeof loadedCharacter> extends null ? nev
       ? { name: analysis.dps.primary.name, dps: analysis.dps.primary.dps }
       : null,
     assessment: {
+      // Both null when damage could not be graded: with one half measured the
+      // verdict is the range below, and collapsing it to a point would assert
+      // the half nobody measured.
       tier: analysis.assessment.tier,
       score: analysis.assessment.score,
+      tierRange: analysis.assessment.tierRange,
+      scoreRange: analysis.assessment.scoreRange,
       note: analysis.assessment.note,
       // Stated up front so a caller reading only this summary knows whether the
       // score covers damage at all.
