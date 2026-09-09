@@ -52,6 +52,28 @@ Fire and lightning are never adjacent in a stacked bar — the fixed damage-type
 order puts cold between them, which is the pair the validator flags under
 all-pairs comparison.
 
+## Absent is not zero
+
+The assessment panel scores defence and damage out of 0.5 each. When damage
+cannot be graded — no ladder sample — the bar is drawn as a **hatched track**,
+not as an empty one, and the reason sits under it in words. An empty bar and a
+zero bar are the same picture, and one of them accuses the build of something.
+
+The headline follows the same rule. With only one half measured there is no
+single letter to show, so it renders a **range** — `D–B`, `0.15–0.65` — and
+takes its colour from the **worst** end, because a build that might be a D must
+not be painted in the colour reserved for an A. Filling the gap instead by
+scaling the measured half up read as a confident single letter, and at the top
+of the scale it was the flattering one: perfect defences with no sample graded
+A, where the same build with a sample graded B.
+
+The same rule governs the rest of the page: a stat whose attribution disagrees
+with the character sheet is listed under "not attributed" with the disagreement
+quoted, rather than omitted; a finding a keystone ruled out is struck through
+with the keystone named, rather than dropped. A reader cannot tell the
+difference between "nothing found" and "found and withdrawn" unless the page
+says which.
+
 ## Marks
 
 - Damage-split segments are separated by a 2px surface gap, with 4px rounded

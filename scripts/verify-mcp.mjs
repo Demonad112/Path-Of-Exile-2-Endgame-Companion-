@@ -120,6 +120,71 @@ if (damage.primary?.name !== 'Ice Shot' || damage.primary?.dps !== 109859) {
 }
 console.log(`damage: ${damage.primary?.name} ${damage.primary?.dps}`)
 
+// The figure above is not unconditional, and the tool must say so. This export
+// carries 20 saved inputs, buff mode EFFECTIVE and no boss setting — the exact
+// combination the predecessor described as "PoB's default config".
+const under = damage.computedUnder
+if (under?.inputCount !== 20 || under?.versusBoss !== false || under?.buffMode !== 'effective') {
+  failures.push(`PoB config wrong: ${JSON.stringify(under).slice(0, 200)}`)
+}
+if (under?.describesTheseFigures !== true || !/pinnacle/i.test(under?.note ?? '')) {
+  failures.push('damage figure was not flagged as a non-boss number')
+}
+console.log(`  computed under: ${under?.conditionals?.length} conditionals, buffs ${under?.buffMode}, boss ${under?.versusBoss}`)
+
+// --- assessment -------------------------------------------------------------
+const assessment = await callTool('poe2_assess_build')
+// No ladder sample here, so there is no single tier to report: the verdict is
+// the interval defence alone can justify. A point value would be asserting the
+// half nobody measured, and `defence / 0.5` asserted the flattering end of it.
+if (assessment.tier !== null || assessment.score !== null) {
+  failures.push(`a single tier was claimed without a damage grade: ${assessment.tier} (${assessment.score})`)
+}
+if (assessment.tierRange?.worst !== 'D' || assessment.tierRange?.best !== 'B') {
+  failures.push(`tier range wrong: ${JSON.stringify(assessment.tierRange)}`)
+}
+if (assessment.scoreRange?.min !== 0.15 || assessment.scoreRange?.max !== 0.65) {
+  failures.push(`score range wrong: ${JSON.stringify(assessment.scoreRange)}`)
+}
+if (assessment.pool?.total !== 4091) {
+  failures.push(`assessment pool wrong: ${JSON.stringify(assessment.pool)}`)
+}
+// No ladder sample is configured here, so damage MUST be unscored rather than
+// graded against a threshold nobody measured.
+if (assessment.offence !== null || !/ladder sample/i.test(assessment.offenceUnscoredReason ?? '')) {
+  failures.push('damage was scored without a ladder sample to grade it against')
+}
+const risk = (assessment.weaknesses ?? []).find((w) => w.text.includes('one-shot'))
+if (!risk?.text.includes('Chaos 3,808') || !risk.text.includes('Physical 4,264')) {
+  failures.push(`one-shot risks incomplete: ${risk?.text}`)
+}
+console.log(
+  `assess: ${assessment.tierRange.worst}-${assessment.tierRange.best} ` +
+    `(${assessment.scoreRange.min}-${assessment.scoreRange.max}), damage unscored, ${assessment.weaknesses?.length} gaps`,
+)
+
+// --- per-item attribution ---------------------------------------------------
+const ring = await callTool('poe2_item_contributions', { slotId: 8 })
+const ringFire = ring.contributions?.find((c) => c.stat === 'fireResistance')
+const ringLightning = ring.contributions?.find((c) => c.stat === 'lightningResistance')
+// The distinction the whole feature exists for: 22% fire against 24 points of
+// overcap costs nothing, while 35% lightning against 8 points breaks the cap.
+if (ringFire?.loss !== 0 || ringFire?.dropsBelowCap !== false) {
+  failures.push(`overcapped contribution should cost nothing: ${JSON.stringify(ringFire)}`)
+}
+if (ringLightning?.without !== 48 || ringLightning?.dropsBelowCap !== true) {
+  failures.push(`cap-breaking contribution wrong: ${JSON.stringify(ringLightning)}`)
+}
+console.log(
+  `contributions: ${ring.itemName} — fire costs nothing (overcap absorbs ${ringFire?.flat}), lightning drops 75 to ${ringLightning?.without}`,
+)
+
+const carriers = await callTool('poe2_item_contributions', { stat: 'lightningResistance' })
+if (carriers.carriedBy?.length !== 4 || carriers.summary?.overcap !== 8) {
+  failures.push(`stat carriers wrong: ${JSON.stringify(carriers.summary)}`)
+}
+console.log(`  lightning carried by ${carriers.carriedBy.length} items, ${carriers.summary.overcap} points of overcap`)
+
 // --- attribution ------------------------------------------------------------
 const armour = await callTool('poe2_find_stat_sources', { stat: 'armour' })
 if (armour.total !== 207 || armour.sources?.length !== 3) {
@@ -196,8 +261,40 @@ if (!chaosSwap) {
 if (ids.some((id) => id.startsWith('gear-tier-'))) {
   failures.push('tier upgrades are being ranked as recommendations')
 }
+// Offence: arithmetic on poe.ninja's own per-skill figures, never a DPS band.
+// 5% crit chance at 2.48x is 1 + 0.05 x 1.48 = 7.4%, and the one crit modifier
+// on the ACTIVE set (+37% on Brood Dart) is worth 1.8% of that. The other three
+// crit mods sit on the idle weapon set and must not be counted.
+const crit = (recs.recommendations ?? []).find((r) => r.id === 'dps-crit-uninvested')
+if (!crit) {
+  failures.push('no offence finding was produced for a build sitting at base crit chance')
+} else {
+  if (!/7\.4%/.test(crit.action)) failures.push(`crit finding does not state the real contribution: ${crit.action}`)
+  const notes = (crit.evidence ?? []).map((e) => e.note).join(' ')
+  if (!/Brood Dart/.test(notes)) failures.push('crit finding does not name the modifier it prices')
+  if (!/1\.8% more damage/.test(notes)) failures.push(`crit finding misprices the modifier: ${notes}`)
+  if (/Eagle Arrow|Rapture Blast/.test(notes)) failures.push('crit finding counted the idle weapon set')
+  if (crit.impact !== null) failures.push('crit finding invented a gain it cannot derive')
+}
+// Hit chance is 100% on this character, so an accuracy finding here would be
+// inventing a problem.
+if (ids.includes('dps-accuracy')) failures.push('an accuracy finding fired at 100% hit chance')
+
+// Unused affix slots: this character has NONE. All ten active items carry three
+// prefixes and three suffixes, and ten of those thirty-per-side are crafted or
+// desecrated rather than explicit. An earlier version counted only explicit mods
+// and so announced "10 empty affix slots" on completely full gear — the ten it
+// thought were empty were exactly the ten it could not see. Silence is the
+// correct output here, so silence is what is asserted.
+if (ids.includes('gear-open-affixes')) {
+  const bad = (recs.recommendations ?? []).find((r) => r.id === 'gear-open-affixes')
+  failures.push(`an affix opening was reported on fully-crafted gear: ${bad.action}`)
+}
+
 console.log(`recommendations: ${ids.length} findings — ${ids.slice(0, 3).join(', ')}…`)
 console.log(`  concrete swap: ${chaosSwap?.action?.slice(0, 96)}…`)
+console.log(`  offence: ${crit?.action?.slice(0, 96)}…`)
+console.log('  affix slots: none — every active item is full, crafted and desecrated affixes included')
 
 // --- mechanics --------------------------------------------------------------
 const mech = await callTool('poe2_explain_mechanic', { query: 'armour' })

@@ -1,62 +1,33 @@
 'use client'
 
-import { useEffect, useState } from 'react'
-import { PassiveTree, type PassiveAllocation, type PassiveTreeData } from '@poe2/core'
+import type { PassiveAllocation } from '@poe2/core'
+import type { PassiveTreeState } from '@/lib/usePassiveTree'
 import { Panel } from '../ui'
 import { PassiveTreeView } from './PassiveTreeView'
 
-const basePath = process.env.NEXT_PUBLIC_BASE_PATH ?? ''
-
 /**
- * The tree artifact is ~600 KB (about 147 KB over the wire) and only matters
- * once a character is loaded, so it is fetched on demand and kept for the
- * session rather than bundled into the initial payload.
+ * The tree artifact is loaded at page level rather than here.
+ *
+ * It stopped being only something to draw once keystone names became an input
+ * to the analysis: the panel and the analysis must be looking at the same copy,
+ * and two fetches of the same file into two components is how that drifts.
  */
-let cached: PassiveTree | null = null
-let inFlight: Promise<PassiveTree> | null = null
-
-function loadTree(): Promise<PassiveTree> {
-  if (cached) return Promise.resolve(cached)
-  if (inFlight) return inFlight
-  inFlight = fetch(`${basePath}/passive-tree.json`)
-    .then((r) => {
-      if (!r.ok) throw new Error(`tree data returned ${r.status}`)
-      return r.json() as Promise<PassiveTreeData>
-    })
-    .then((data) => {
-      cached = new PassiveTree(data)
-      return cached
-    })
-    .finally(() => {
-      inFlight = null
-    })
-  return inFlight
-}
-
 export function TreePanel({
   allocation,
+  state,
   weakStats = [],
 }: {
   allocation: PassiveAllocation
+  /** Loaded once at page level, so the drawing and the analysis agree. */
+  state: PassiveTreeState
   /**
    * Stats the analysis found the build short on, best first. Drives the
    * route-suggestion picker — see PassiveTreeView.
    */
   weakStats?: Array<{ key: string; label: string; shortfall: string }>
 }) {
-  const [tree, setTree] = useState<PassiveTree | null>(cached)
-  const [error, setError] = useState<string | null>(null)
-
-  useEffect(() => {
-    if (tree) return
-    let live = true
-    loadTree()
-      .then((t) => live && setTree(t))
-      .catch((e: Error) => live && setError(e.message))
-    return () => {
-      live = false
-    }
-  }, [tree])
+  const tree = state.status === 'ready' ? state.tree : null
+  const error = state.status === 'error' ? state.message : null
 
   return (
     <Panel

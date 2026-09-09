@@ -9,12 +9,13 @@
  */
 
 import { chromium } from 'playwright'
+import { watchConsole } from './console-errors.mjs'
 import { readFileSync, mkdirSync, existsSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 
 const here = dirname(fileURLToPath(import.meta.url))
-const baseUrl = process.argv[2] ?? 'http://127.0.0.1:3210/'
+const baseUrl = process.argv[2] ?? 'http://127.0.0.1:3210/character/'
 const outDir = process.argv[3] ?? join(here, '..', 'screenshots')
 const fixture = readFileSync(join(here, '..', 'packages/core/test/fixtures/athrynas-v43.json'), 'utf8')
 
@@ -43,11 +44,7 @@ for (const vp of VIEWPORTS) {
     })
     const page = await context.newPage()
 
-    const consoleErrors = []
-    page.on('console', (m) => {
-      if (m.type() === 'error') consoleErrors.push(m.text())
-    })
-    page.on('pageerror', (e) => consoleErrors.push(String(e)))
+    const consoleErrors = watchConsole(page, baseUrl)
 
     await page.goto(baseUrl, { waitUntil: 'networkidle' })
 
@@ -87,7 +84,7 @@ for (const vp of VIEWPORTS) {
     )
     if (overflow) failures.push(`${vp.name}/${theme}: page scrolls horizontally`)
 
-    if (consoleErrors.length) failures.push(`${vp.name}/${theme}: console errors: ${consoleErrors.join(' | ')}`)
+    if (consoleErrors.own.length) failures.push(`${vp.name}/${theme}: console errors: ${consoleErrors.own.join(' | ')}`)
 
     console.log(`captured ${vp.name}/${theme}`)
     await context.close()

@@ -42,7 +42,14 @@
 
 import type { EquippedItem } from '../model/slots.js'
 import type { DefenseSummary } from '../defense/index.js'
-import { analyzeItem, findResistanceSwaps, summarizeSwaps } from '../gear/analyze.js'
+import {
+  AFFIX_CAPACITY,
+  OCCUPIES_AFFIX_SLOT,
+  analyzeItem,
+  findResistanceSwaps,
+  summarizeSwaps,
+  type ItemAnalysis,
+} from '../gear/analyze.js'
 import type { ModTiers } from '../gear/tiers.js'
 import type { Evidence, Recommendation } from './types.js'
 
@@ -60,6 +67,160 @@ export interface GearRecommendationInput {
   items: EquippedItem[]
   defense: DefenseSummary
   tiers: ModTiers
+}
+
+/** One item with room left on it. */
+interface OpenAffixes {
+  analysis: ItemAnalysis
+  prefixes: number
+  suffixes: number
+  total: number
+}
+
+/**
+ * Affix slots that are simply empty.
+ *
+ * An unused slot is the one gear finding that needs no judgement about the
+ * build's direction: whatever this character wants, a slot holding nothing is
+ * giving nothing. That is what separates it from a tier upgrade, which this
+ * module deliberately does not rank.
+ *
+ * ## Why an item can be skipped
+ *
+ * `affixCounts` counts the slot-occupying mods whose affix kind the ladder data
+ * resolved. A mod it could not classify is therefore invisible to the count,
+ * and subtracting from capacity would invent an open slot that is already full.
+ * So an item carrying any unresolved slot-occupying mod is excluded outright and
+ * reported, rather than guessed at — the count would be a floor, and a floor
+ * presented as a total is exactly the failure this project avoids.
+ *
+ * That failure is not hypothetical. Counting only `explicit` here reported ten
+ * open slots on a character whose ten items are completely full, because the
+ * ten crafted and desecrated affixes holding those slots were invisible to it.
+ *
+ * Corrupted items are excluded because they cannot be modified, and Normal and
+ * Unique items because they have no craftable affix budget.
+ */
+function collectOpenAffixes(analysed: ItemAnalysis[]): {
+  open: OpenAffixes[]
+  capacity: number
+  /** Items the capacity figure covers — including those already full. */
+  counted: number
+  unverifiable: ItemAnalysis[]
+} {
+  const open: OpenAffixes[] = []
+  const unverifiable: ItemAnalysis[] = []
+  let capacity = 0
+  let counted = 0
+
+  for (const analysis of analysed) {
+    const per = AFFIX_CAPACITY[analysis.rarity]
+    if (per === undefined || analysis.corrupted || analysis.itemLevel === null) continue
+
+    if (analysis.mods.some((m) => OCCUPIES_AFFIX_SLOT.has(m.source) && m.kind === null)) {
+      unverifiable.push(analysis)
+      continue
+    }
+
+    capacity += per * 2
+    counted += 1
+    const prefixes = Math.max(0, per - analysis.affixCounts.prefix)
+    const suffixes = Math.max(0, per - analysis.affixCounts.suffix)
+    if (prefixes + suffixes > 0) {
+      open.push({ analysis, prefixes, suffixes, total: prefixes + suffixes })
+    }
+  }
+
+  open.sort((a, b) => b.total - a.total)
+  return { open, capacity, counted, unverifiable }
+}
+
+function describeSlots(prefixes: number, suffixes: number): string {
+  const parts: string[] = []
+  if (prefixes) parts.push(`${prefixes} prefix${prefixes === 1 ? '' : 'es'}`)
+  if (suffixes) parts.push(`${suffixes} suffix${suffixes === 1 ? '' : 'es'}`)
+  return parts.join(' and ')
+}
+
+/**
+ * One finding for all of it, not one per item.
+ *
+ * On the reference character ten active items have room left. Ten separate
+ * recommendations saying the same thing would bury every other finding on the
+ * page, so this reports the total and leads with the emptiest item.
+ */
+function openAffixRule(analysed: ItemAnalysis[]): Recommendation[] {
+  const { open, capacity, counted, unverifiable } = collectOpenAffixes(analysed)
+  if (!open.length || capacity === 0) return []
+
+  const slots = open.reduce((sum, o) => sum + o.total, 0)
+  const worst = open[0]!
+  const used = capacity - slots
+
+  const evidence: Evidence[] = open.slice(0, 4).map(
+    (o): Evidence => ({
+      kind: 'item',
+      slotId: o.analysis.slotId,
+      slotLabel: o.analysis.slotLabel,
+      itemName: o.analysis.name,
+      note: `${o.analysis.name} (${o.analysis.rarity}, item level ${o.analysis.itemLevel}) has ${describeSlots(o.prefixes, o.suffixes)} unused.`,
+    }),
+  )
+
+  // Suppression is never silent: an item whose modifiers could not all be
+  // classified is named, so "10 open slots" is not read as "and nothing else".
+  if (unverifiable.length) {
+    evidence.push({
+      kind: 'item',
+      slotId: unverifiable[0]!.slotId,
+      slotLabel: unverifiable[0]!.slotLabel,
+      itemName: unverifiable[0]!.name,
+      note:
+        `${unverifiable.length} item${unverifiable.length === 1 ? '' : 's'} ` +
+        `(${unverifiable.map((u) => u.name).join(', ')}) carry modifiers the affix data cannot classify, so their used slots ` +
+        `cannot be counted and they are left out of this total entirely.`,
+    })
+  }
+
+  return [
+    {
+      id: 'gear-open-affixes',
+      category: 'gear',
+      action:
+        `Craft into the ${slots} empty affix slot${slots === 1 ? '' : 's'} on your gear — starting with ${worst.analysis.name}, ` +
+        `which has ${describeSlots(worst.prefixes, worst.suffixes)} unused.`,
+      rationale:
+        `${counted} active item${counted === 1 ? '' : 's'} carry ${used} of a possible ${capacity} affixes, with ` +
+        `${open.length} of them holding room. ` +
+        `An empty slot grants nothing regardless of what this build is scaling, so unlike a low-tier modifier it is worth ` +
+        `filling whatever direction the character takes.`,
+      impact: {
+        stat: 'affixSlotsUsed',
+        label: 'Affix slots in use',
+        from: used,
+        to: capacity,
+        delta: slots,
+        unit: 'points',
+        // Unused slots as a fraction of the budget they belong to. Bounded 0-1
+        // by construction, and it falls as the gear fills rather than rewarding
+        // a character for owning more items.
+        significance: slots / capacity,
+      },
+      cost: {
+        kind: 'currency',
+        amount: 1,
+        currencyTier: 'low',
+        detail:
+          `An augment per slot, on an item that keeps everything already on it. ` +
+          `${slots} such slot${slots === 1 ? ' is' : 's are'} available; each is worth doing on its own.`,
+      },
+      tradeoff:
+        'An added modifier is a rolled modifier — it cannot be chosen outright, and it spends the slot that a later, better roll would have wanted.',
+      evidence,
+      provenance: 'ninja',
+      score: score(slots / capacity, 'currency', 1),
+    },
+  ]
 }
 
 /**
@@ -154,6 +315,9 @@ export function gearRecommendations({ items, defense, tiers }: GearRecommendatio
       score: score(Math.min(1, candidate.closesShortfall / RESIST_CAP), 'gear', needed ?? 1),
     })
   }
+
+  // --- unused affix slots ---------------------------------------------------
+  out.push(...openAffixRule(analysed))
 
   return out.sort((a, b) => b.score - a.score)
 }

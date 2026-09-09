@@ -40,6 +40,34 @@ export const RESIST_STAT: Readonly<Record<string, string>> = Object.freeze({
 
 const ALL_ELEMENTAL_RESIST = 'base_resist_all_elements_%'
 
+/**
+ * How many prefixes, and how many suffixes, each rarity can hold.
+ *
+ * A game rule rather than a judgement, which is why it lives here and not in
+ * `thresholds.ts`. Rarities absent from this table — Normal, Unique — have no
+ * craftable affix budget to compare against, so nothing is ever reported as
+ * open on them.
+ */
+export const AFFIX_CAPACITY: Readonly<Record<string, number>> = Object.freeze({
+  Magic: 1,
+  Rare: 3,
+})
+
+/**
+ * Mod sources that consume one of those slots.
+ *
+ * Counting only `explicit` here was wrong, and wrong in the direction that
+ * invents free power: the reference character's ten active items carry ten
+ * crafted and desecrated affixes between them, so every one of them read as
+ * having a slot free when in fact all ten are full. An implicit, rune or
+ * enchant occupies no affix slot and is correctly absent.
+ */
+export const OCCUPIES_AFFIX_SLOT: ReadonlySet<ItemModAnalysis['source']> = new Set([
+  'explicit',
+  'crafted',
+  'desecrated',
+])
+
 export interface RolledStat {
   id: string
   value: number
@@ -171,7 +199,14 @@ function quality(value: number, min: number, max: number): number | null {
 }
 
 /** Pull the id-carrying mod entries out of a raw poe.ninja item. */
-function structuredMods(item: EquippedItem): { id: string; stats: Record<string, number>; source: ItemModAnalysis['source'] }[] {
+/**
+ * The mod ids and rolled stats poe.ninja ships alongside each item.
+ *
+ * Exported because the offence rules need to know which modifiers a character
+ * is actually carrying, and re-reading `itemData.mods` in a second place is how
+ * two readers of one payload start to disagree.
+ */
+export function structuredMods(item: EquippedItem): { id: string; stats: Record<string, number>; source: ItemModAnalysis['source'] }[] {
   const raw = (item.raw as { itemData?: { mods?: Record<string, unknown> } }).itemData?.mods
   if (!raw || typeof raw !== 'object') return []
 
@@ -366,8 +401,8 @@ export function analyzeItem(
 
   const tiered = mods.filter((m) => m.tier !== null).map((m) => m.tier!)
   const affixCounts = {
-    prefix: mods.filter((m) => m.kind === 'prefix' && m.source === 'explicit').length,
-    suffix: mods.filter((m) => m.kind === 'suffix' && m.source === 'explicit').length,
+    prefix: mods.filter((m) => m.kind === 'prefix' && OCCUPIES_AFFIX_SLOT.has(m.source)).length,
+    suffix: mods.filter((m) => m.kind === 'suffix' && OCCUPIES_AFFIX_SLOT.has(m.source)).length,
   }
 
   if (item.itemLevel === null) {

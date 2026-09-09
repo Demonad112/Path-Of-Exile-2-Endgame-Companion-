@@ -12,9 +12,10 @@ import { readFileSync, mkdirSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { chromium } from 'playwright'
+import { watchConsole } from './console-errors.mjs'
 
 const here = dirname(fileURLToPath(import.meta.url))
-const baseUrl = process.argv[2] ?? 'http://localhost:3210'
+const baseUrl = process.argv[2] ?? 'http://localhost:3210/character/'
 const outDir = process.argv[3] ?? join(here, '..', 'screenshots')
 
 const payload = JSON.parse(
@@ -31,8 +32,7 @@ const browser = await chromium.launch({
 
 try {
   const page = await browser.newPage({ viewport: { width: 1280, height: 900 } })
-  const consoleErrors = []
-  page.on('console', (m) => m.type() === 'error' && consoleErrors.push(m.text()))
+  const consoleErrors = watchConsole(page, baseUrl)
 
   await page.goto(baseUrl, { waitUntil: 'networkidle' })
 
@@ -78,17 +78,20 @@ try {
   }
 
   // --- the offline worker ships and parses -----------------------------------
-  const sw = await page.evaluate(async (base) => {
-    const res = await fetch(`${base}/sw.js`)
+  // Resolved against the ORIGIN, not the page. The worker is registered at the
+  // site root and the analyser lives at /character/, so appending to the page
+  // path would ask for a file that has never existed there.
+  const sw = await page.evaluate(async () => {
+    const res = await fetch(new URL('/sw.js', location.origin).href)
     return { status: res.status, body: await res.text() }
-  }, baseUrl.replace(/\/+$/, ''))
+  })
   if (sw.status !== 200) failures.push(`sw.js is not served: HTTP ${sw.status}`)
   if (!/poe2-data-/.test(sw.body)) failures.push('sw.js does not define the data cache')
   // A cached character sheet presented as current would be a wrong answer.
   if (!/isLiveRequest/.test(sw.body)) failures.push('sw.js does not exclude live character requests from caching')
   console.log('service worker: served, caches data, never caches a character sheet')
 
-  if (consoleErrors.length) failures.push(`console errors: ${consoleErrors.slice(0, 3).join(' | ')}`)
+  if (consoleErrors.own.length) failures.push(`console errors: ${consoleErrors.own.slice(0, 3).join(' | ')}`)
 } finally {
   await browser.close()
 }

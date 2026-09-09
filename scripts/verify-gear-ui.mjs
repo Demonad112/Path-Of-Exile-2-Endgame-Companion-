@@ -13,9 +13,10 @@ import { readFileSync, mkdirSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { chromium } from 'playwright'
+import { watchConsole } from './console-errors.mjs'
 
 const here = dirname(fileURLToPath(import.meta.url))
-const baseUrl = process.argv[2] ?? 'http://localhost:3210'
+const baseUrl = process.argv[2] ?? 'http://localhost:3210/character/'
 const outDir = process.argv[3] ?? join(here, '..', 'screenshots')
 const fixture = readFileSync(join(here, '..', 'packages', 'core', 'test', 'fixtures', 'athrynas-v43.json'), 'utf8')
 
@@ -28,8 +29,7 @@ const browser = await chromium.launch({
 
 try {
   const page = await browser.newPage({ viewport: { width: 1280, height: 900 } })
-  const consoleErrors = []
-  page.on('console', (m) => m.type() === 'error' && consoleErrors.push(m.text()))
+  const consoleErrors = watchConsole(page, baseUrl)
 
   await page.goto(baseUrl, { waitUntil: 'networkidle' })
 
@@ -90,8 +90,45 @@ try {
     if (/Raise chaos resistance by 57% to reach/.test(fText)) {
       failures.push('the vague chaos finding survived alongside the specific one')
     }
+
+    // --- offence, which needs no affix data and no PoB export ---------------
+    // 5% crit chance at 2.48x is 7.4%, and the single crit modifier on the
+    // ACTIVE set is worth 1.8% of it. Asserted in the rendered DOM because a
+    // finding that exists in the report and never reaches the page is not a
+    // finding the reader has.
+    if (!/crit adds only 7\.4%/.test(fText)) {
+      failures.push('the crit finding did not render its measured contribution')
+    }
+
+    // The evidence trail is collapsed by default, by design — so open it the
+    // way a reader would rather than asserting against text nobody can see.
+    const critCard = findings.first().locator('li', { hasText: 'crit adds only 7.4%' })
+    if (!(await critCard.count())) {
+      failures.push('the crit finding did not render as its own card')
+    } else {
+      await critCard.first().getByRole('button', { name: /^Evidence \(/ }).click()
+      const critText = await critCard.first().innerText()
+      if (!/Brood Dart/.test(critText)) failures.push('the crit evidence did not name the modifier it prices')
+      if (!/worth 1\.8% more damage/.test(critText)) {
+        failures.push(`the crit evidence did not price the modifier: ${critText.slice(0, 200)}`)
+      }
+      if (/Eagle Arrow|Rapture Blast/.test(critText)) {
+        failures.push('the crit evidence rendered modifiers from the idle weapon set')
+      }
+    }
+
+    // --- unused affix slots -------------------------------------------------
+    // This character has none: all ten active items are full once crafted and
+    // desecrated affixes are counted alongside explicit ones. An earlier version
+    // counted only explicit and rendered "10 empty affix slots" over completely
+    // full gear, so the absence is asserted rather than assumed.
+    if (/empty affix slot/.test(fText)) {
+      failures.push('an affix opening rendered on fully-crafted gear')
+    }
+
     await findings.first().screenshot({ path: join(outDir, 'findings-enriched.png') })
     console.log('findings: named the item and affix after the affix data loaded')
+    console.log('findings: offence priced at 7.4% crit, no false affix openings')
   } else {
     failures.push('the recommendations panel did not render')
   }
@@ -163,7 +200,7 @@ try {
 
   await page.screenshot({ path: join(outDir, 'gear-mobile.png'), fullPage: false })
 
-  if (consoleErrors.length) failures.push(`console errors: ${consoleErrors.slice(0, 3).join(' | ')}`)
+  if (consoleErrors.own.length) failures.push(`console errors: ${consoleErrors.own.slice(0, 3).join(' | ')}`)
 } finally {
   await browser.close()
 }

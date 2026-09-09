@@ -12,19 +12,25 @@
 
 import { z } from 'zod'
 import {
+  ATTRIBUTABLE_STATS,
   NODE_KIND,
   analyzeContent,
   analyzeItem,
+  attributionForSlot,
+  attributionForStat,
   auditCharacter,
   decodePobExport,
+  describePobConfig,
   editPobTree,
   findMechanicSafe,
   findResistanceSwaps,
   findTierUpgrades,
+  itemsCarrying,
   normalizeItems,
   summarizeSwaps,
   parseProfileUrl,
   pathToNode,
+  pobDpsAgreement,
   readPlayerStats,
   rankNodesByMeasuredGain,
   resolveAllocation,
@@ -35,6 +41,7 @@ import {
   supportedStats,
   validateByName,
   validateSetup,
+  type AttributableStat,
 } from './deps.js'
 import {
   client,
@@ -167,20 +174,125 @@ export const TOOLS: ToolDef[] = [
     description:
       'Per-skill damage for the loaded character, read verbatim from poe.ninja’s computed values — never ' +
       'recalculated. Includes hit DPS, damage over time, use rate, critical strike, projectiles and the damage-type ' +
-      'split. Charge-up skills report a hit rate below 1, meaning only that fraction of uses land.',
+      'split. Charge-up skills report a hit rate below 1, meaning only that fraction of uses land. Also reports the ' +
+      'Path of Building configuration these figures were computed under — whether a boss was assumed, which buffs ' +
+      'were active, and which conditionals were switched on — so the numbers are not read as unconditional.',
     inputSchema: {
       includeBuffs: z.boolean().optional().describe('Include buff and herald skills, which deal damage over time only. Default false.'),
     },
     annotations: READ_ONLY,
     handler: (args) => {
-      const dps = requireCharacter().analysis.dps
+      const { analysis } = requireCharacter()
+      const dps = analysis.dps
       const skills = args.includeBuffs ? dps.skills : dps.hitSkills
+      // The saved configuration describes what Path of Building computed. It
+      // only describes poe.ninja's figures too when the two agree that they are
+      // the same number, so that agreement is stated rather than assumed.
+      // Undefined when there was nothing to compare — no export, or no dps check.
+      // Collapsing that to `false` would claim the two engines disagree, which is
+      // a different and unearned statement.
+      const agrees = pobDpsAgreement(analysis.reconciliation)
       return {
         primary: dps.primary,
         skills,
         provenance: dps.provenance,
         unresolved: dps.unresolved,
+        computedUnder: analysis.pobConfig
+          ? {
+              ...analysis.pobConfig,
+              describesTheseFigures: agrees ?? null,
+              summary: describePobConfig(analysis.pobConfig),
+              note:
+                agrees === undefined
+                  ? 'Whether this configuration also describes the figures above could not be established — the two engines’ damage numbers were never compared. It describes the Path of Building export either way.'
+                  : agrees
+                    ? analysis.pobConfig.versusBoss
+                      ? null
+                      : 'Not a single-target number. Judging pinnacle-boss readiness against it would overstate this build.'
+                    : 'poe.ninja and Path of Building disagree on this character’s damage, so this configuration describes the export’s figure and not the one reported above.',
+            }
+          : null,
       }
+    },
+  },
+
+  {
+    name: 'poe2_assess_build',
+    title: 'Assess the build overall',
+    description:
+      'The overall verdict on the loaded character: a 0-1 score, an A-D tier, what is holding up, what the gaps ' +
+      'are, and what the verdict assumes. Defence and damage are weighted evenly, but damage is graded ONLY against ' +
+      'figures observed on the ladder — with no sample the offence half is left unscored and the remainder ' +
+      'rescaled, rather than graded against invented thresholds. Also reports keystone corrections: an allocated ' +
+      'keystone that changes how another figure should be read, and any allocated keystone the character’s own ' +
+      'stats contradict, whose corrections were therefore NOT applied.',
+    inputSchema: {},
+    annotations: READ_ONLY,
+    handler: () => {
+      const { analysis } = requireCharacter()
+      return {
+        ...analysis.assessment,
+        keystones: {
+          applied: analysis.keystones.applied,
+          notes: analysis.keystones.notes,
+          unverified: analysis.keystones.unverified,
+        },
+        suppressedFindings: analysis.recommendations.suppressed,
+      }
+    },
+  },
+
+  {
+    name: 'poe2_item_contributions',
+    title: 'Find what each item is holding up',
+    description:
+      'What each equipped item contributes to the character sheet, and what the sheet would read without it — the ' +
+      'question a gear swap actually poses. Losing a modifier is not the same as losing the stat: a ring granting ' +
+      '22% fire resistance on a build carrying 24 points of overcap costs nothing, while the same ring on a build ' +
+      'with no overcap costs every point. Each entry reports the figure after the cap, the figure before it, and ' +
+      'whether removing the item would drop a capped stat below its cap. Stats whose attribution does not agree ' +
+      'with the character sheet are excluded and the reason given, rather than reported with false confidence.',
+    inputSchema: {
+      slotId: z.number().int().optional().describe('Restrict to one equipment slot id, e.g. 8 for Ring 1.'),
+      stat: z
+        .string()
+        .optional()
+        .describe('Restrict to one stat, e.g. "fireResistance" — returns the items carrying it, largest loss first.'),
+    },
+    annotations: READ_ONLY,
+    handler: (args) => {
+      const { attribution } = requireCharacter().analysis
+
+      if (args.stat !== undefined) {
+        const stat = String(args.stat) as AttributableStat
+        if (!ATTRIBUTABLE_STATS.includes(stat)) {
+          throw new Error(`"${stat}" is not attributable. Available: ${ATTRIBUTABLE_STATS.join(', ')}.`)
+        }
+        const excluded = attribution.excluded.find((e) => e.stat === stat)
+        return {
+          stat,
+          summary: attributionForStat(attribution, stat),
+          excludedReason: excluded?.reason ?? null,
+          carriedBy: itemsCarrying(attribution, stat).map(({ item, contribution }) => ({
+            slotId: item.slotId,
+            slotLabel: item.slotLabel,
+            itemName: item.itemName,
+            ...contribution,
+          })),
+        }
+      }
+
+      if (args.slotId !== undefined) {
+        const slotId = Number(args.slotId)
+        const item = attributionForSlot(attribution, slotId)
+        if (!item) {
+          const slots = attribution.items.map((i) => `${i.slotId} (${i.slotLabel})`).join(', ')
+          throw new Error(`No attributed item in slot ${slotId}. Slots carrying stats: ${slots || 'none'}.`)
+        }
+        return item
+      }
+
+      return attribution
     },
   },
 
@@ -1113,6 +1225,20 @@ function summarize(loaded: ReturnType<typeof loadedCharacter> extends null ? nev
     primarySkill: analysis.dps.primary
       ? { name: analysis.dps.primary.name, dps: analysis.dps.primary.dps }
       : null,
+    assessment: {
+      // Both null when damage could not be graded: with one half measured the
+      // verdict is the range below, and collapsing it to a point would assert
+      // the half nobody measured.
+      tier: analysis.assessment.tier,
+      score: analysis.assessment.score,
+      tierRange: analysis.assessment.tierRange,
+      scoreRange: analysis.assessment.scoreRange,
+      note: analysis.assessment.note,
+      // Stated up front so a caller reading only this summary knows whether the
+      // score covers damage at all.
+      damageScored: analysis.assessment.offence !== null,
+    },
+    keystones: analysis.keystones.applied,
     findingCount: analysis.recommendations.recommendations.length,
     crossValidated: analysis.pobStats !== null,
     warnings: analysis.warnings,

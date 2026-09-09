@@ -97,9 +97,29 @@ export interface Unresolved {
   missing: string
 }
 
+/**
+ * A finding a keystone ruled out.
+ *
+ * Emitted so suppression is never silent. A finding that vanishes without
+ * explanation is indistinguishable from one the engine never spotted, and the
+ * difference matters to anyone deciding how much to trust the list.
+ */
+export interface Suppressed {
+  /** The id the finding would have carried. */
+  id: string
+  /** What the engine saw. */
+  finding: string
+  /** Why it does not apply to this build. */
+  reason: string
+  /** The keystone responsible. */
+  keystone: string
+}
+
 export interface RecommendationReport {
   recommendations: Recommendation[]
   unresolved: Unresolved[]
+  /** Findings an allocated keystone ruled out. Empty when none were. */
+  suppressed: Suppressed[]
   /** True when nothing actionable was found — say so plainly, don't pad. */
   buildIsSound: boolean
   /** One-line honest summary. */

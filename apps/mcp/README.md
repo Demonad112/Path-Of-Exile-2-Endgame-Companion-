@@ -30,7 +30,7 @@ Add to `claude_desktop_config.json`:
   "mcpServers": {
     "poe2": {
       "command": "node",
-      "args": ["/absolute/path/to/POE2-MCP-V2/apps/mcp/dist/index.js"]
+      "args": ["/absolute/path/to/Path-Of-Exile-2-Endgame-Companion-/apps/mcp/dist/index.js"]
     }
   }
 }
@@ -39,6 +39,20 @@ Add to `claude_desktop_config.json`:
 Use an absolute path, and restart Claude Desktop afterwards. Verify with
 `poe2_health_check`, which reports the tool count, whether the passive tree data
 loaded, and — with `checkNetwork: true` — whether poe.ninja is reachable.
+
+### Optional: ladder comparison
+
+`POE2_NINJA_PROXY_BASE` enables the build assessment's damage half. Without it,
+`poe2_assess_build` scores defence only and says why — there is no defensible
+damage threshold to grade against, and this codebase carries no invented ones.
+
+```json
+"env": { "POE2_NINJA_PROXY_BASE": "https://poe2-endgame-ninja-proxy.vercel.app" }
+```
+
+Opt-in because it is an outbound call this server does not otherwise make. The
+hop cannot go direct: poe.ninja's builds endpoints are protobuf with no
+published schema, and `services/ninja-proxy` is what decodes them.
 
 ## Typical session
 
@@ -72,10 +86,11 @@ readable message, so the model can correct itself rather than seeing an opaque
 protocol failure. Messages name the fix: an unknown stat lists the available
 stats, an unknown skill lists the character's skills.
 
-**Only the bridge tools have effects.** Twenty of the twenty-four read data and
-nothing else. The four marked ⚠️ in TOOLS.md drive a Path of Building instance
+**Only the bridge tools have effects.** Every tool reads and nothing else,
+except the four marked ⚠️ in TOOLS.md, which drive a Path of Building instance
 running on this machine. None of them touches a game account, a file, or
-poe.ninja.
+poe.ninja. The counts live in TOOLS.md, which is generated from the registry —
+repeating them here is what produced four different stale figures in V1.
 
 ## The Path of Building bridge
 
@@ -167,13 +182,22 @@ prove them:
   beyond the class pool are not modelled — and a modifier the table does not
   list reports as `unknown`, never as a violation, because absence is not
   evidence of illegality.
+- **Whether a different modifier would beat the one you have.** The offence
+  findings price what a modifier currently returns — a +37% critical damage
+  bonus at 5% crit chance is worth 1.8% more damage, and that is arithmetic.
+  Whether flat damage in that slot would be worth more depends on where the
+  build is heading, so it is stated as a measurement and the choice is left to
+  you. The same reason tier upgrades are listed but never ranked.
 - **Whether a passive node is the *right* choice.**
   `poe2_suggest_tree_routes` reports what a node costs and what it prints,
   ranked by value per point. Which node suits a build depends on where that
   build is heading, and that is not something this can measure.
-- **Ladder comparison.** Cut deliberately. poe.ninja's builds API ignores
-  per-skill sort keys and filter parameters, and reports DPS only as a lossy
-  display string.
+- **Where a character ranks among players.** The ladder sample behind
+  `poe2_assess_build` is one page of 100 rows, essentially all level 100 —
+  poe.ninja's builds search ignores every pagination parameter tried. So it can
+  answer "what do the best builds of this class run" and cannot answer "what
+  percentile is this character in". Nothing here phrases it the second way. The
+  comparison is also off unless `POE2_NINJA_PROXY_BASE` is set.
 - **Whether Path of Building understood a modifier.** `poe2_pob_simulate_mods`
   passes text to PoB's custom-modifier box, which accepts what it recognises and
   silently ignores the rest. A result with no stat changes usually means the
@@ -190,4 +214,6 @@ Spawns the real binary, completes the initialise handshake, lists tools, and
 calls a representative set against the committed character — asserting the
 values that come back are the real ones (lowest max hit 3,808 chaos; Ice Shot
 109,859; armour 207 from Golem Tether; 3 allocation groups; a duplicate support
-category correctly rejected). Runs in CI.
+category correctly rejected; tier C with damage left unscored; a ring whose 22%
+fire resistance costs nothing behind overcap while its 35% lightning drops the
+sheet from 75% to 48%). Runs in CI.

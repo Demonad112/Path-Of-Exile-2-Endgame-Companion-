@@ -19,14 +19,34 @@ allocation planner, and a farming dashboard.
 2. **Never invent a number.** Where a value cannot be established from the
    data, the output says exactly what is missing instead of guessing.
 
+Two consequences that surprise people, both deliberate:
+
+- **The build score is often a range, not a letter.** Damage is graded only
+  against figures observed on the ladder, never against thresholds nobody
+  established, so with no sample there is no single overall grade to give. The
+  verdict becomes the interval defence alone can justify — `D–B` rather than a
+  confident `C`. Scaling the measured half up to fill the gap was worse than it
+  sounds: it graded a build with perfect defences and no sample an **A**, where
+  the same build with a sample and mid-table damage graded **B**. A failed
+  comparison must not improve a verdict. There are no DPS constants in this
+  codebase — though damage *findings* still appear, because those are arithmetic
+  on the character's own figures: missing 8% of your attacks costs exactly
+  `100/92 - 1` of your damage whatever a "good" DPS number is this patch.
+- **A keystone is not trusted because it is allocated.** A node appearing in an
+  allocated list is not proof it is doing anything — a real ladder character
+  carried Chaos Inoculation while reporting 1,823 life and 54% chaos
+  resistance, the exact figures the keystone forbids. Where a keystone's effect
+  is visible in stats already held, it must be observed before any of its
+  corrections apply.
+
 ## Layout
 
 | | |
 |---|---|
-| `packages/core` | Pure analysis. No I/O, no framework — `fetch` and the Path of Building transport are injected. 235 tests. |
+| `packages/core` | Pure analysis. No I/O, no framework — `fetch` and the Path of Building transport are injected. 374 tests. |
 | `packages/data` | Generated game data artifacts and the scripts that extract them. See [PROVENANCE.md](packages/data/PROVENANCE.md). |
 | `apps/web` | Static Next.js export on GitHub Pages. Five routes. |
-| `apps/mcp` | 28-tool Model Context Protocol server over stdio. See [TOOLS.md](apps/mcp/TOOLS.md). |
+| `apps/mcp` | 30-tool Model Context Protocol server over stdio. See [TOOLS.md](apps/mcp/TOOLS.md). |
 | `services/ninja-proxy` | Serverless functions. Needed because poe.ninja sends no CORS headers. |
 
 **The invariant:** neither app contains analysis logic. Both import
@@ -38,9 +58,12 @@ break this.
 
 - `/` — landing page and progress summary.
 - `/character` — paste a poe.ninja profile URL or a Path of Building code and
-  get ranked findings, defence led by the smallest hit that kills, per-skill
-  damage, per-item modifier tiers, a rendered passive tree, and
-  cross-validation against Path of Building's own engine.
+  get an overall assessment, ranked findings, defence led by the smallest hit
+  that kills, per-skill damage with the configuration it was computed under,
+  what accuracy and critical strikes are actually returning, what each equipped
+  item is holding up and what a swap would cost, per-item modifier tiers and
+  unused affix slots, a rendered passive tree, progress since the last import,
+  and cross-validation against Path of Building's own engine.
 - `/checklist` — progression roadmap from campaign end through the full
   301-point Atlas tree, with benchmark gates and common-mistake warnings.
 - `/atlas` — ordered Atlas cluster allocation, memory forks, and per-mechanic
@@ -50,7 +73,9 @@ break this.
   boss requirements, and current meta builds.
 
 Checklist, Atlas and dashboard progress is stored client-side in
-`localStorage`. Static reference content lives in hand-edited files under
+`localStorage`, alongside up to twenty character snapshots per character —
+figures only, never gear or modifiers, so history cannot crowd out the rest.
+Static reference content lives in hand-edited files under
 `apps/web/src/data/`; records that are unverified or that conflict across
 sources carry a `SourceRef` and render as a badge.
 
@@ -63,12 +88,15 @@ It merges two predecessors:
 - [`Demonad112/Poe2-endgame`](https://github.com/Demonad112/Poe2-endgame) — the
   reference routes, the shell, and the proxy's ladder and health endpoints.
 
-The merge is staged. This first stage carries the whole of the analyser and the
-whole of the reference site into one app with one design language. Endgame's
-keystone corroboration, per-item stat attribution, build score, progress
-snapshots and Path of Building config caveats land in `packages/core` in the
-next stage — they are the parts that change what the analysis *says*, and they
-are kept separate so that change is reviewable on its own.
+The merge was staged, in two parts:
+
+1. Both projects carried whole into one app with one design language. Nothing
+   about what the analysis concluded changed, which left the analyser's existing
+   tests as an untouched control.
+2. The five parts of `Poe2-endgame` that change what the analysis *says* —
+   keystone corroboration, per-item stat attribution, the build score, progress
+   snapshots and Path of Building config caveats — rebuilt on top of the merged
+   core. Kept separate so that change was reviewable on its own.
 
 ## The poe.ninja proxy
 
@@ -94,11 +122,31 @@ Verification, all of which should pass before any change is called done:
 
 ```bash
 npm run typecheck                  # builds core first; the script handles it
-npm test                           # 235 tests
+npm test                           # 374 tests
 npm run build                      # core -> dist, then the web static export
 node scripts/verify-mcp.mjs        # drives the real MCP binary over stdio
 npm run tools -w @poe2/mcp         # regenerates TOOLS.md; CI fails if stale
 ```
+
+The render checks drive a real browser against the built export, and each
+defaults to `http://127.0.0.1:3210/character/`. Serve `apps/web/out` there
+first, then:
+
+```bash
+node scripts/screenshot.mjs        # both themes, 1280px and 390px
+node scripts/verify-phase2-ui.mjs  # assessment, config caveat, attribution, progress
+node scripts/verify-gear-ui.mjs    # modifier tiers, swaps, headroom
+node scripts/verify-tree.mjs       # the rendered passive tree
+node scripts/verify-extras.mjs     # PoB-code import, chat, service worker
+```
+
+`scripts/verify-url-import.mjs` needs the local stand-in proxy and a build
+pointed at it — its own header gives the three commands.
+
+A console error whose URL is on another host is reported but not failed on: the
+character page calls the ladder proxy on every import, and a machine with no
+route to it would otherwise fail these checks for a network reason. That the
+page degrades correctly without a sample is asserted separately, by name.
 
 A local `next build` produces root-relative assets, because `basePath` is
 applied only under GitHub Actions. Serve `out/` at the **root** locally, and
